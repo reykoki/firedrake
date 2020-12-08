@@ -11,7 +11,8 @@ import numbers
 import abc
 
 from mpi4py import MPI
-from firedrake.utils import IntType, RealType
+import h5py
+from petsc4py.PETSc import ViewerHDF5
 from pyop2 import op2
 from pyop2.base import DataSet
 from pyop2.mpi import COMM_WORLD, dup_comm
@@ -24,6 +25,7 @@ import firedrake.cython.extrusion_numbering as extnum
 import firedrake.extrusion_utils as eutils
 import firedrake.cython.spatialindex as spatialindex
 import firedrake.utils as utils
+from firedrake.utils import IntType, RealType
 from firedrake.interpolation import interpolate
 from firedrake.logging import info_red
 from firedrake.parameters import parameters
@@ -304,6 +306,49 @@ def _from_triangle(filename, dim, comm):
                 plex.setLabelValue(dmcommon.FACE_SETS_LABEL, join[0], bid)
 
     return plex
+
+
+def _from_hdf5(filename, comm):
+    comm = PETSc.Comm(comm=comm)
+    # Determine the format from an existing h5 groups.
+    with h5py.File(filename, 'r') as f:
+        # add '/labels/celltype'
+        if all(d in f for d in ['/geometry/vertices',
+                                '/topology/cells',
+                                '/topology/cones',
+                                '/topology/order',
+                                '/topology/orientation']):
+            informat = ViewerHDF5.Format.HDF5_PETSC
+        elif all(d in f for d in ['/labels/celltype',
+                                  '/geometry/vertices',
+                                  '/viz/topology/cells']):
+            informat = ViewerHDF5.Format.HDF5_XDMF
+        else:
+            raise RuntimeError("Unable to determine the HDF5 file format used in %s", filename)
+    vwr = ViewerHDF5()
+    vwr.create(filename, mode='r', comm=comm)
+    vwr.pushFormat(format=informat)
+    vwr.pushGroup("mesh0")  # Currently ignored.
+    plex = PETSc.DMPlex()
+    plex.create(comm=comm)
+    if informat == ViewerHDF5.Format.HDF5_PETSC:
+        sfXB = plex.loadTopology(vwr)
+        plex.loadCoordinates(vwr)
+        plex.loadLabels(vwr)
+        plex.setOptionsPrefix("loaded_")
+        plex.viewFromOptions("-dm_view")
+    elif informat == ViewerHDF5.Format.HDF5_XDMF:
+        plex.load(viewer=vwr)  # TODO: load labels, too.
+        plex.setOptionsPrefix("loaded_")
+        plex.viewFromOptions("-dm_view")
+        plex.interpolate()
+        plex.setOptionsPrefix("interpolated_")
+        plex.viewFromOptions("-dm_view")
+        sfXB = None
+    vwr.popGroup()
+    vwr.popFormat()
+    vwr.destroy()
+    return plex, sfXB
 
 
 def _from_cell_list(dim, cells, coords, comm):
@@ -643,7 +688,7 @@ class MeshTopology(AbstractMeshTopology):
     """A representation of mesh topology implemented on a PETSc DMPlex."""
 
     @timed_function("CreateMesh")
-    def __init__(self, plex, name, reorder, distribution_parameters):
+    def __init__(self, plex, name, reorder, distribution_parameters, sfXB=None):
         """Half-initialise a mesh topology.
 
         :arg plex: :class:`DMPlex` representing the mesh topology
@@ -651,6 +696,9 @@ class MeshTopology(AbstractMeshTopology):
         :arg reorder: whether to reorder the mesh (bool)
         :arg distribution_parameters: options controlling mesh
             distribution, see :func:`Mesh` for details.
+        :arg sfXB: :class:`SF` that pushes global point numbers to
+            plex points (only significant if plex was loaded
+            from disk)
         """
 
         super().__init__(name)
@@ -674,13 +722,17 @@ class MeshTopology(AbstractMeshTopology):
         elif overlap_type == DistributedMeshOverlapType.FACET:
             def add_overlap():
                 dmcommon.set_adjacency_callback(self.topology_dm)
-                self.topology_dm.distributeOverlap(overlap)
+                sfBC = self.topology_dm.distributeOverlap(overlap)
+                if self.sfXB:
+                    self.sfXB = self.sfXB.compose(sfBC)
                 dmcommon.clear_adjacency_callback(self.topology_dm)
                 self._grown_halos = True
         elif overlap_type == DistributedMeshOverlapType.VERTEX:
             def add_overlap():
                 # Default is FEM (vertex star) adjacency.
-                self.topology_dm.distributeOverlap(overlap)
+                sfBC = self.topology_dm.distributeOverlap(overlap)
+                if self.sfXB:
+                    self.sfXB = self.sfXB.compose(sfBC)
                 self._grown_halos = True
         else:
             raise ValueError("Unknown overlap type %r" % overlap_type)
@@ -690,6 +742,8 @@ class MeshTopology(AbstractMeshTopology):
 
         self.topology_dm = plex
         r"The PETSc DM representation of the mesh topology."
+        self.sfXB = sfXB
+        r"The PETSc SF that pushes global point numbers to plex points."
         self._comm = dup_comm(plex.comm.tompi4py())
 
         # Mark exterior and interior facets
@@ -705,11 +759,15 @@ class MeshTopology(AbstractMeshTopology):
             # refine this mesh in parallel.  Later, when we actually use
             # it, we grow the halo.
             self.set_partitioner(distribute, partitioner_type)
-            plex.distribute(overlap=0)
+            sfBC = plex.distribute(overlap=0)
+            if self.sfXB:
+                self.sfXB = self.sfXB.compose(sfBC)
             # plex carries a new dm after distribute, which
             # does not inherit partitioner from the old dm.
             # It probably makes sense as chaco does not work
             # once distributed.
+            plex.setOptionsPrefix("distributed_")
+            plex.viewFromOptions("-dm_view")
 
         tdim = plex.getDimension()
 
@@ -1607,6 +1665,29 @@ values from f.)"""
         current = super(MeshGeometry, self).__dir__()
         return list(OrderedDict.fromkeys(dir(self._topology) + current))
 
+    def save(self, filename, format=ViewerHDF5.Format.HDF5_PETSC):
+        """Save this mesh object.
+
+        :arg filename: The name of the file to save the mesh in.
+        :arg format: Mesh output format: `ViewerHDF5.Format.HDF5_PETSC` or
+            `ViewerHDF5.Format.HDF5_XDMF`.
+        """
+        if format not in [ViewerHDF5.Format.HDF5_PETSC, ViewerHDF5.Format.HDF5_XDMF]:
+            raise TypeError("Unknown output format %s." % format)
+        vwr = ViewerHDF5()
+        vwr.create(filename, mode='w', comm=self.topology_dm.comm)
+        vwr.pushFormat(format=format)
+        vwr.pushGroup("mesh0")  # Currently ignored.
+        if format == ViewerHDF5.Format.HDF5_PETSC:
+            self.topology_dm.viewTopology(viewer=vwr)
+            self.topology_dm.viewCoordinates(viewer=vwr)
+            self.topology_dm.viewLabels(viewer=vwr)
+        else:
+            self.topology_dm.view(viewer=vwr)
+        vwr.popGroup()
+        vwr.popFormat()
+        vwr.destroy()
+
 
 def make_mesh_from_coordinates(coordinates):
     """Given a coordinate field build a new mesh, using said coordinate field.
@@ -1679,6 +1760,8 @@ def Mesh(meshfile, **kwargs):
     * Exodus: with extension `.e`, `.exo`
     * CGNS: with extension `.cgns`
     * Triangle: with extension `.node`
+    * HDF5: with extension `.h5`, `.hdf5`
+      (Can only load HDF5 files created by :meth:`.MeshGeometry.save` method.)
 
     .. note::
 
@@ -1709,7 +1792,7 @@ def Mesh(meshfile, **kwargs):
     distribution_parameters = kwargs.get("distribution_parameters", None)
     if distribution_parameters is None:
         distribution_parameters = {}
-
+    sfXB = None
     if isinstance(meshfile, PETSc.DMPlex):
         name = "plexmesh"
         plex = meshfile
@@ -1732,19 +1815,22 @@ def Mesh(meshfile, **kwargs):
                 plex = _from_gmsh(meshfile, comm)
         elif ext.lower() == '.node':
             plex = _from_triangle(meshfile, geometric_dim, comm)
+        elif ext.lower() in ['.h5', '.hdf5']:
+            plex, sfXB = _from_hdf5(meshfile, comm)
         else:
             raise RuntimeError("Mesh file %s has unknown format '%s'."
                                % (meshfile, ext[1:]))
 
     # Create mesh topology
     topology = MeshTopology(plex, name=name, reorder=reorder,
-                            distribution_parameters=distribution_parameters)
+                            distribution_parameters=distribution_parameters,
+                            sfXB=sfXB)
 
-    tcell = topology.ufl_cell()
-    if geometric_dim is None:
-        geometric_dim = tcell.topological_dimension()
-    cell = tcell.reconstruct(geometric_dimension=geometric_dim)
-
+    # Construct coordinate element
+    # TODO: meshfile might indicates higher-order coordinate element
+    cell = topology.ufl_cell()
+    geometric_dim = topology.topology_dm.getCoordinateDim()
+    cell = cell.reconstruct(geometric_dimension=geometric_dim)
     element = ufl.VectorElement("Lagrange", cell, 1)
     # Create mesh object
     mesh = MeshGeometry.__new__(MeshGeometry, element)
