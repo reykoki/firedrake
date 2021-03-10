@@ -188,8 +188,7 @@ class PMGPC(PCBase):
                 cV_ = cV_.sub(index)
 
             cbcs.append(firedrake.DirichletBC(cV_, firedrake.zero(cV_.shape),
-                                              bc.sub_domain,
-                                              method=bc.method))
+                                              bc.sub_domain))
 
         fcp = fctx._problem.form_compiler_parameters
         cproblem = firedrake.NonlinearVariationalProblem(cF, cu, cbcs, cJ,
