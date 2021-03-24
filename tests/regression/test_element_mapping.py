@@ -1,5 +1,3 @@
-import pytest
-
 from firedrake import *
 
 
@@ -31,13 +29,13 @@ def test_with_mapping():
     uexp = as_vector([cos(x+z), sin(x-z)])
 
     uorig = Function(Vorig).project(uexp)
-    #Piola map means that functions in horizontal space
-    #have some vertical component
+    # Piola map means that functions in horizontal space
+    # have some vertical component
     vval = assemble(uorig[1]*uorig[1]*dx)
     assert(vval > 1.0e-3)
 
-    #No piola map means that functions in horizontal space
-    #have no vertical component
+    # No piola map means that functions in horizontal space
+    # have no vertical component
     uremapped = Function(V).project(uexp)
     revval = assemble(uremapped[1]*uremapped[1]*dx)
     assert(revval < 1.0e-6)
