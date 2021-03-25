@@ -5,6 +5,9 @@ import ctypes
 from collections import OrderedDict
 from ctypes import POINTER, c_int, c_double, c_void_p
 
+from petsc4py import PETSc
+from petsc4py.PETSc import ViewerHDF5
+
 from pyop2 import op2
 
 from firedrake.utils import ScalarType, IntType, as_ctypes
@@ -14,6 +17,7 @@ from firedrake.logging import warning
 from firedrake import utils
 from firedrake import vector
 from firedrake.adjoint import FunctionMixin
+import firedrake.cython.dmcommon as dmcommon
 try:
     import cachetools
 except ImportError:
@@ -203,6 +207,57 @@ class CoordinatelessFunction(ufl.Coefficient):
         else:
             return super(Function, self).__str__()
 
+    def save(self, filename):
+        tV = self._function_space
+        dm = tV._mesh.topology_dm
+        sd = tV._shared_data
+        vwr = ViewerHDF5()
+        vwr.create(filename, mode='a', comm=self._function_space._mesh.topology_dm.comm)
+        #vwr.pushGroup("mesh0")  # Currently ignored.
+        if False:
+            vec = self.dat._vec
+            vec.setName(self._name)
+            vec.view(vwr)
+        else:
+            # Permute: Firedrake -> PETSc
+            data = self.dat._data
+            vec = PETSc.Vec().createWithArray(data, size=None, bsize=self.dat.cdim, comm=dm.comm)
+            dmcommon.write_vec_with_petsc_orientation(tV._mesh, sd.node_set.halo.dm.getSection(), vec)
+            # Save in PETSc order
+            self.dat.data
+            vec = self.dat._vec
+            vec.setName(self._name)
+            vec.view(vwr)
+            # Permute: PETSc -> Firedrake
+            dmcommon.write_vec_with_petsc_orientation(tV._mesh, sd.node_set.halo.dm.getSection(), vec)
+            self.dat.data
+        #vwr.popGroup()
+        vwr.destroy()
+
+    def load(self, filename):
+        tV = self._function_space
+        dm = tV._mesh.topology_dm
+        sd = tV._shared_data
+        vwr = ViewerHDF5()
+        vwr.create(filename, mode='r', comm=dm.comm)
+        if False:
+            # Load into the global vector
+            vec = self.dat._vec
+            vec.setName(self.name())
+            sf = sd.data_migration_sf_global
+            dm.loadGlobalVector(vwr, sd.node_set.halo.dm, sf, vec)
+            self.dat.data
+        else:
+            # Load into the local vector
+            data = self.dat._data
+            vec = PETSc.Vec().createWithArray(data, size=None, bsize=self.dat.cdim, comm=dm.comm)
+            vec.setName(self.name())
+            sf = sd.data_migration_sf_local
+            dm.loadLocalVector(vwr, sd.node_set.halo.dm, sf, vec)
+            dmcommon.write_vec_with_petsc_orientation(tV._mesh, sd.node_set.halo.dm.getSection(), vec)
+            self.dat.data
+        vwr.destroy()
+
 
 class Function(ufl.Coefficient, FunctionMixin):
     r"""A :class:`Function` represents a discretised field over the
@@ -223,7 +278,7 @@ class Function(ufl.Coefficient, FunctionMixin):
     """
 
     @FunctionMixin._ad_annotate_init
-    def __init__(self, function_space, val=None, name=None, dtype=ScalarType):
+    def __init__(self, function_space, val=None, name=None, dtype=ScalarType, filename=None):
         r"""
         :param function_space: the :class:`.FunctionSpace`,
             or :class:`.MixedFunctionSpace` on which to build this :class:`Function`.
@@ -235,6 +290,7 @@ class Function(ufl.Coefficient, FunctionMixin):
         :param name: user-defined name for this :class:`Function` (optional).
         :param dtype: optional data type for this :class:`Function`
                (defaults to ``ScalarType``).
+        :param filename: The name of the HDF5 file from which function is loaded.
         """
 
         V = function_space
@@ -252,6 +308,8 @@ class Function(ufl.Coefficient, FunctionMixin):
         else:
             self._data = CoordinatelessFunction(V.topological,
                                                 val=val, name=name, dtype=dtype)
+        if filename:
+            self.load(filename)
 
         self._function_space = V
         ufl.Coefficient.__init__(self, self.function_space().ufl_function_space())
@@ -617,6 +675,12 @@ class Function(ufl.Coefficient, FunctionMixin):
         if len(arg.shape) == 1:
             g_result = g_result[0]
         return g_result
+
+    def save(self, filename):
+        self.topological.save(filename)
+
+    def load(self, filename):
+        self.topological.load(filename)
 
 
 class PointNotInDomainError(Exception):

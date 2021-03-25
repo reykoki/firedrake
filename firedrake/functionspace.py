@@ -4,6 +4,9 @@ This module implements the user-visible API for constructing
 API is functional, rather than object-based, to allow for simple
 backwards-compatibility, argument checking, and dispatch.
 """
+import pickle
+import h5py
+
 import ufl
 
 from pyop2.utils import flatten
@@ -97,8 +100,8 @@ def check_element(element, top=True):
 
 
 @timed_function("CreateFunctionSpace")
-def FunctionSpace(mesh, family, degree=None, name=None, vfamily=None,
-                  vdegree=None):
+def FunctionSpace(mesh, family=None, degree=None, name=None, vfamily=None,
+                  vdegree=None, filename=None):
     """Create a :class:`.FunctionSpace`.
 
     :arg mesh: The mesh to determine the cell from.
@@ -109,12 +112,18 @@ def FunctionSpace(mesh, family, degree=None, name=None, vfamily=None,
         (extruded meshes only).
     :arg vdegree: The degree of the element in the vertical dimension
         (extruded meshes only).
+    :arg filename: The name of the HDF5 file to load function space from.
 
     The ``family`` argument may be an existing
     :class:`ufl.FiniteElementBase`, in which case all other arguments
     are ignored and the appropriate :class:`.FunctionSpace` is returned.
     """
-    element = make_scalar_element(mesh, family, degree, vfamily, vdegree)
+    if filename:
+        with h5py.File(filename, "r", driver='mpio', comm=mesh.comm) as f:
+            element_b = f.attrs['Firedrake_ufl_element'].tobytes()
+            element = pickle.loads(element_b)
+    else:
+        element = make_scalar_element(mesh, family, degree, vfamily, vdegree)
 
     # Support FunctionSpace(mesh, MixedElement)
     if type(element) is ufl.MixedElement:
@@ -128,7 +137,7 @@ def FunctionSpace(mesh, family, degree=None, name=None, vfamily=None,
     if element.family() == "Real":
         new = impl.RealFunctionSpace(topology, element, name=name)
     else:
-        new = impl.FunctionSpace(topology, element, name=name)
+        new = impl.FunctionSpace(topology, element, name=name, filename=filename)
     if mesh is not topology:
         return impl.WithGeometry(new, mesh)
     else:

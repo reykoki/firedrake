@@ -5,6 +5,8 @@ classes for attaching extra information to instances of these.
 """
 
 from collections import OrderedDict
+import pickle
+import h5py
 
 import numpy
 
@@ -238,6 +240,11 @@ class WithGeometry(ufl.FunctionSpace):
     def collapse(self):
         return type(self)(self.topological.collapse(), self.mesh())
 
+    def save(self, filename):
+        # Save MeshGeometry object
+        #self.mesh.save(filename)
+        self.topological.save(filename)
+
 
 class FunctionSpace(object):
     r"""A representation of a function space.
@@ -251,6 +258,7 @@ class FunctionSpace(object):
         degrees of freedom.
     :kwarg name: An optional name for this :class:`FunctionSpace`,
         useful for later identification.
+    :kwarg filename: The name of the HDF5 file to load function space from.
 
     The element can be a essentially any
     :class:`~ufl.classes.FiniteElementBase`, except for a
@@ -270,7 +278,7 @@ class FunctionSpace(object):
        which provides extra error checking and argument sanitising.
 
     """
-    def __init__(self, mesh, element, name=None):
+    def __init__(self, mesh, element, name=None, filename=None):
         super(FunctionSpace, self).__init__()
         if type(element) is ufl.MixedElement:
             raise ValueError("Can't create FunctionSpace for MixedElement")
@@ -288,7 +296,7 @@ class FunctionSpace(object):
             real_tensorproduct = b.family() == 'Real'
         # Used for reconstruction of mixed/component spaces
         self.real_tensorproduct = real_tensorproduct
-        sdata = get_shared_data(mesh, finat_element, real_tensorproduct=real_tensorproduct)
+        sdata = get_shared_data(mesh, finat_element, real_tensorproduct=real_tensorproduct, filename=filename)
         # The function space shape is the number of dofs per node,
         # hence it is not always the value_shape.  Vector and Tensor
         # element modifiers *must* live on the outside!
@@ -571,6 +579,14 @@ class FunctionSpace(object):
     def collapse(self):
         from firedrake import FunctionSpace
         return FunctionSpace(self.mesh(), self.ufl_element())
+
+    def save(self, filename):
+        # Save MeshTopology object
+        #self.mesh.save(filename)
+        with h5py.File(filename, "a", driver='mpio', comm=self.comm) as f:
+            element_b = pickle.dumps(self.ufl_element())
+            f.attrs['Firedrake_ufl_element'] = numpy.void(element_b)
+        self._shared_data.save(filename)
 
 
 class MixedFunctionSpace(object):

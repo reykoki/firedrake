@@ -19,6 +19,8 @@ import finat
 from decorator import decorator
 from functools import partial
 
+from petsc4py.PETSc import ViewerHDF5
+
 from pyop2 import op2
 from firedrake.utils import IntType
 from pyop2.utils import as_tuple
@@ -56,7 +58,7 @@ def cached(f, mesh, key, *args, **kwargs):
 
 
 @cached
-def get_global_numbering(mesh, key):
+def get_global_numbering(mesh, key, global_numbering=None):
     """Get a PETSc Section describing the global numbering.
 
     This numbering associates function space nodes with topological
@@ -69,8 +71,20 @@ def get_global_numbering(mesh, key):
         degenerate fs x Real tensorproduct.
     :returns: A new PETSc Section.
     """
+    if global_numbering:
+        return global_numbering
     nodes_per_entity, real_tensorproduct = key
     return mesh.create_section(nodes_per_entity, real_tensorproduct)
+
+
+@cached
+def get_data_migration_sf_local(mesh, key, lsf):
+    return lsf
+
+
+@cached
+def get_data_migration_sf_global(mesh, key, gsf):
+    return gsf
 
 
 @cached
@@ -398,18 +412,30 @@ class FunctionSpaceData(object):
     __slots__ = ("map_cache", "entity_node_lists",
                  "node_set", "cell_boundary_masks",
                  "interior_facet_boundary_masks", "offset",
-                 "extruded", "mesh", "global_numbering")
+                 "extruded", "mesh", "global_numbering",
+                 "data_migration_sf_local",
+                 "data_migration_sf_global")
 
-    def __init__(self, mesh, finat_element, real_tensorproduct=False):
+    def __init__(self, mesh, finat_element, real_tensorproduct=False, filename=None):
+        self.mesh = mesh
         entity_dofs = finat_element.entity_dofs()
         nodes_per_entity = tuple(mesh.make_dofs_per_plex_entity(entity_dofs))
 
         # Create the PetscSection mapping topological entities to functionspace nodes
         # For non-scalar valued function spaces, there are multiple dofs per node.
+        key = (nodes_per_entity, real_tensorproduct)
+        self.data_migration_sf_local = None
+        self.data_migration_sf_global = None
+        if filename:
+            mesh.topology.init()
+            dm, lsf, gsf = self.load(filename)
+            _ = get_global_numbering(mesh, key, global_numbering=dm.getSection())
+            self.data_migration_sf_local = get_data_migration_sf_local(mesh, key, lsf)
+            self.data_migration_sf_global = get_data_migration_sf_global(mesh, key, gsf)
 
         # These are keyed only on nodes per topological entity.
-        global_numbering = get_global_numbering(mesh, (nodes_per_entity, real_tensorproduct))
-        node_set = get_node_set(mesh, (nodes_per_entity, real_tensorproduct))
+        global_numbering = get_global_numbering(mesh, key)
+        node_set = get_node_set(mesh, key)
 
         edofs_key = entity_dofs_key(entity_dofs)
 
@@ -424,7 +450,6 @@ class FunctionSpaceData(object):
         self.cell_boundary_masks = get_boundary_masks(mesh, (edofs_key, "cell"), finat_element)
         self.interior_facet_boundary_masks = get_boundary_masks(mesh, (edofs_key, "interior_facet"), finat_element)
         self.extruded = mesh.cell_set._extruded
-        self.mesh = mesh
         self.global_numbering = global_numbering
 
     def __eq__(self, other):
@@ -484,13 +509,39 @@ class FunctionSpaceData(object):
             self.map_cache[entity_set] = val
         return val
 
+    def save(self, filename):
+        topology_dm = self.mesh.topology_dm
+        vwr = ViewerHDF5()
+        vwr.create(filename, mode='a', comm=topology_dm.comm)
+        topology_dm.viewSection(vwr, self.node_set.halo.dm)
+        vwr.destroy()
 
-def get_shared_data(mesh, finat_element, real_tensorproduct=False):
+    def load(self, filename):
+        mesh = self.mesh
+        topology_dm = mesh.topology_dm
+        comm = topology_dm.comm
+        vwr = ViewerHDF5()
+        vwr.create(filename, mode='r', comm=comm)
+        #vwr.pushGroup("mesh0")  # Currently ignored.
+        section = PETSc.Section().create(comm=comm)
+        section.setPermutation(mesh._plex_renumbering)
+        dm = PETSc.DMShell().create(comm=comm)
+        dm.setPointSF(topology_dm.getPointSF())
+        dm.setSection(section)
+        sfdata_local, sfdata_global = topology_dm.loadSection(vwr, dm, mesh.sfXB)
+        #vwr.popGroup()
+        vwr.destroy()
+        return dm, sfdata_local, sfdata_global
+
+
+def get_shared_data(mesh, finat_element, real_tensorproduct=False, filename=None):
     """Return the :class:`FunctionSpaceData` for the given
     element.
 
     :arg mesh: The mesh to build the function space data on.
     :arg finat_element: A FInAT element.
+    :kwarg real_tensorproduct: If the element is of foo x Real tensorproduct form.
+    :kwarg filename: The name of the HDF5 file to load function space from.
     :raises ValueError: if mesh or finat_element are invalid.
     :returns: a :class:`FunctionSpaceData` object with the shared
         data.
@@ -500,4 +551,4 @@ def get_shared_data(mesh, finat_element, real_tensorproduct=False):
     if not isinstance(finat_element, finat.finiteelementbase.FiniteElementBase):
         raise ValueError("Can't create function space data from a %s" %
                          type(finat_element))
-    return FunctionSpaceData(mesh, finat_element, real_tensorproduct=real_tensorproduct)
+    return FunctionSpaceData(mesh, finat_element, real_tensorproduct=real_tensorproduct, filename=filename)
