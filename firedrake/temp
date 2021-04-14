@@ -28,11 +28,11 @@ class CreateFunctionSpace:
 
         return self.function_space
 
-    def create_element(self):
+    def make_scalar_element(self):
         self.mesh.init()
-        self.topology = self.mesh.toplogoy
-        self.cell = self.topology.ufl_cell()
-        self.element = ufl.FiniteElement(self.family, cell=self.cell, degree=self.degree)
+        topology = self.mesh.toplogoy
+        cell = topology.ufl_cell()
+        self.element = ufl.FiniteElement(family, cell=cell, degree=degree)
 
     def check_element(self, top=True):
         if type(self.element) in (ufl.BrokenElement, ufl.FacetElement,
@@ -54,17 +54,17 @@ class CreateFunctionSpace:
             check_element(e, top=False)
 
     def build_function_space(self):
-        if self.element.family() == "Real":
-            self.function_space = impl.RealFunctionSpace(self.topology, self.element, name=self.name)
+        topology = self.mesh.topology
+        if element.family() == "Real":
+            self.function_space = impl.RealFunctionSpace(topology, element, name=name)
         else:
-            self.function_space = impl.FunctionSpace(self.topology, self.element, name=self.name)
-        if mesh is not self.topology:
+            self.function_space = impl.FunctionSpace(topology, element, name=name)
+        if mesh is not topology:
             self.function_space = impl.WithGeometry(self.function_space, self.mesh)
 
     def get_element(self):
-        self.element = self.create_element(self.mesh, self.family, self.degree, self.vfamily, self.vdegree)
+        self.element = self.make_scalar_element(self.mesh, self.family, self.degree, self.vfamily, self.vdegree)
         # Check that any Vector/Tensor/Mixed modifiers are outermost.
-
 
 
 class CreateVectorFunctionSpace(CreateFunctionSpace):
@@ -75,55 +75,28 @@ class CreateVectorFunctionSpace(CreateFunctionSpace):
         self.dim = self.dim or self.mesh.ufl_cell().geometric_dimension()
 
     def get_element(self):
-        sub_element = self.create_element()
+        sub_element = self.make_scalar_element()
         self.element = ufl.VectorElement(sub_element, dim=dim)
         self.check_element()
-        self.element.reconstruct(cell=self.cell)
 
 class CreateTensorFunctionSpace(CreateFunctionSpace):
 
     def __init__(self, mesh, family, degree=None, shape=None, symmetry=None,
                  name=None, vfamily=None, vdegree=None):
         super().__init__(mesh, family, degree, name, vfamily, vdegree)
-        self.shape = shape
+        self.shape = shape or (mesh.ufl_cell().geometric_dimension(),) * 2
         self.symmetry = symmetry
 
-    def create_element(self):
-        self.mesh.init()
-        self.topology = mesh.topology
-        self.cell = self.topology.ufl_cell()
-        if isinstance(self.cell, ufl.TensorProductCell) \
-           and self.vfamily is not None and self.vdegree is not None:
-            la = ufl.FiniteElement(self.family, cell=cell.sub_cells()[0], degree=self.degree)
-            # If second element was passed in, use it
-            lb = ufl.FiniteElement(self.vfamily, cell=ufl.interval, degree=self.vdegree)
-            # Now make the TensorProductElement
-            self.element = ufl.TensorProductElement(la, lb)
-        else:
-            self.element = ufl.FiniteElement(self.family, cell=cell, degree=self.degree)
-
-
     def get_element(self):
-        sub_element = self.create_element()
-        self.shape = self.shape or (mesh.ufl_cell().geometric_dimension(),) * 2
+        sub_element = make_scalar_element(mesh, family, degree, vfamily, vdegree)
         self.element = ufl.TensorElement(sub_element, shape=self.shape, symmetry=self.symmetry)
         self.check_element()
-        self.element.reconstruct(cell=self.cell)
 
 class CreateMixedFunctionSpace(CreateFunctionSpace):
 
     def __init__(self, spaces, name=None, mesh=None):
         super().__init__(mesh, name=name)
         self.spaces = spaces
-
-
-    def build_spaces(self, sub_elements):
-        self.mesh.init()
-        self.topology = self.mesh.topology
-        cell = topology.ufl_cell()
-        self.element = family.reconstruct(cell=self.cell)
-        return MixedFunctionSpace(self.element, mesh=self.mesh, name=self.name)
-
 
     def get_element(self):
         if isinstance(self.spaces, ufl.FiniteElementBase):
@@ -139,7 +112,7 @@ class CreateMixedFunctionSpace(CreateFunctionSpace):
                     else:
                         sub_elements.append(ele)
             rec(self.spaces.sub_elements())
-            self.spaces = [self.build_spaces(element) for element in sub_elements]
+            self.spaces = [FunctionSpace(self.mesh, element) for element in sub_elements]
 
         # Check that function spaces are on the same mesh
         meshes = [space.mesh() for space in self.spaces]
@@ -161,7 +134,8 @@ class CreateMixedFunctionSpace(CreateFunctionSpace):
                 continue
             else:
                 raise ValueError("Can't make mixed space with %s" % type(space))
+
     def build_function_space(self):
         self.functionspace = impl.MixedFunctionSpace(self.spaces, name=name)
-        if self.mesh is not self.topology:
+        if self.mesh is not self.mesh.topology:
             self.functionspace = impl.WithGeometry(self.functionspace, self.mesh)
