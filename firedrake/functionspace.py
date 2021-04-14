@@ -12,8 +12,8 @@ from pyop2.profiling import timed_function
 from firedrake import functionspaceimpl as impl
 
 
-__all__ = ("MixedFunctionSpace", "FunctionSpace",
-           "VectorFunctionSpace", "TensorFunctionSpace")
+__all__ = ("CreateMixedFunctionSpace", "CreateFunctionSpace",
+           "CreateVectorFunctionSpace", "CreateTensorFunctionSpace")
 
 class CreateFunctionSpace:
     def __init__(self, mesh, family=None, degree=None, name=None, vfamily=None, vdegree=None):
@@ -63,7 +63,6 @@ class CreateFunctionSpace:
 
     def get_element(self):
         self.element = self.create_element(self.mesh, self.family, self.degree, self.vfamily, self.vdegree)
-        # Check that any Vector/Tensor/Mixed modifiers are outermost.
 
 
 
@@ -77,6 +76,7 @@ class CreateVectorFunctionSpace(CreateFunctionSpace):
     def get_element(self):
         sub_element = self.create_element()
         self.element = ufl.VectorElement(sub_element, dim=dim)
+        # Check that any Vector/Tensor/Mixed modifiers are outermost.
         self.check_element()
         self.element.reconstruct(cell=self.cell)
 
@@ -107,6 +107,7 @@ class CreateTensorFunctionSpace(CreateFunctionSpace):
         sub_element = self.create_element()
         self.shape = self.shape or (mesh.ufl_cell().geometric_dimension(),) * 2
         self.element = ufl.TensorElement(sub_element, shape=self.shape, symmetry=self.symmetry)
+        # Check that any Vector/Tensor/Mixed modifiers are outermost.
         self.check_element()
         self.element.reconstruct(cell=self.cell)
 
@@ -121,9 +122,8 @@ class CreateMixedFunctionSpace(CreateFunctionSpace):
         self.mesh.init()
         self.topology = self.mesh.topology
         cell = topology.ufl_cell()
-        self.element = family.reconstruct(cell=self.cell)
-        return MixedFunctionSpace(self.element, mesh=self.mesh, name=self.name)
-
+        element = family.reconstruct(cell=self.cell)
+        return MixedFunctionSpace(element, mesh=self.mesh, name=self.name)
 
     def get_element(self):
         if isinstance(self.spaces, ufl.FiniteElementBase):
@@ -161,6 +161,7 @@ class CreateMixedFunctionSpace(CreateFunctionSpace):
                 continue
             else:
                 raise ValueError("Can't make mixed space with %s" % type(space))
+
     def build_function_space(self):
         self.functionspace = impl.MixedFunctionSpace(self.spaces, name=name)
         if self.mesh is not self.topology:
