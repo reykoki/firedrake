@@ -1,4 +1,5 @@
 """
+TEST
 This module implements the user-visible API for constructing
 :class:`.FunctionSpace` and :class:`.MixedFunctionSpace` objects.  The
 API is functional, rather than object-based, to allow for simple
@@ -15,251 +16,168 @@ from firedrake import functionspaceimpl as impl
 __all__ = ("MixedFunctionSpace", "FunctionSpace",
            "VectorFunctionSpace", "TensorFunctionSpace")
 
+class FunctionSpace:
+    def __init__(self, mesh, family=None, degree=None, name=None, vfamily=None, vdegree=None):
+        self.mesh = mesh
+        self.family = family
+        self.degree = degree
+        self.name = name
+        self.vfamily = vfamily
+        self.vdegree = vdegree
+        self.get_element()
+        self.build_function_space()
+        print('=========== IN FUNCTIONSPACE ===========')
+        print('MESH:')
+        print(self.mesh)
+        print('FAMILY:')
+        print(self.family)
+        print('========================================\n')
 
-def make_scalar_element(mesh, family, degree, vfamily, vdegree):
-    """Build a scalar :class:`ufl.FiniteElement`.
+        return self.function_space
 
-    :arg mesh: The mesh to determine the cell from.
-    :arg family: The finite element family.
-    :arg degree: The degree of the finite element.
-    :arg vfamily: The finite element in the vertical dimension
-        (extruded meshes only).
-    :arg vdegree: The degree of the element in the vertical dimension
-        (extruded meshes only).
+    def create_element(self):
+        self.mesh.init()
+        self.topology = self.mesh.topology
+        self.cell = self.topology.ufl_cell()
+        return ufl.FiniteElement(self.family, cell=self.cell, degree=self.degree)
 
-    The ``family`` argument may be an existing
-    :class:`ufl.FiniteElementBase`, in which case all other arguments
-    are ignored and the element is returned immediately.
-
-    .. note::
-
-       As a side effect, this function finalises the initialisation of
-       the provided mesh, by calling :meth:`.AbstractMeshTopology.init` (or
-       :meth:`.MeshGeometry.init`) as appropriate.
-    """
-    mesh.init()
-    topology = mesh.topology
-    cell = topology.ufl_cell()
-    if isinstance(family, ufl.FiniteElementBase):
-        return family.reconstruct(cell=cell)
-
-    if isinstance(cell, ufl.TensorProductCell) \
-       and vfamily is not None and vdegree is not None:
-        la = ufl.FiniteElement(family,
-                               cell=cell.sub_cells()[0],
-                               degree=degree)
-        # If second element was passed in, use it
-        lb = ufl.FiniteElement(vfamily,
-                               cell=ufl.interval,
-                               degree=vdegree)
-        # Now make the TensorProductElement
-        return ufl.TensorProductElement(la, lb)
-    else:
-        return ufl.FiniteElement(family, cell=cell, degree=degree)
-
-
-def check_element(element, top=True):
-    """Run some checks on the provided element.
-
-    The :class:`~ufl.classes.VectorElement` and
-    :class:`~ufl.classes.TensorElement` modifiers must be "outermost"
-    for function space construction to work, excepting that they
-    should not wrap a :class:`~ufl.classes.MixedElement`.  Similarly,
-    a base :class:`~ufl.classes.MixedElement` must be outermost (it
-    can contain :class:`~ufl.classes.MixedElement` instances, provided
-    they satisfy the other rules). This function checks that.
-
-    :arg element: The :class:`UFL element
-        <ufl.classes.FiniteElementBase>` to check.
-    :kwarg top: Are we at the top element (in which case the modifier
-        is legal).
-    :returns: ``None`` if the element is legal.
-    :raises ValueError: if the element is illegal.
-
-    """
-    if type(element) in (ufl.BrokenElement, ufl.FacetElement,
-                         ufl.InteriorElement, ufl.RestrictedElement,
-                         ufl.HDivElement, ufl.HCurlElement):
-        inner = (element._element, )
-    elif type(element) is ufl.EnrichedElement:
-        inner = element._elements
-    elif type(element) is ufl.TensorProductElement:
-        inner = element.sub_elements()
-    elif isinstance(element, ufl.MixedElement):
-        if not top:
-            raise ValueError("%s modifier must be outermost" % type(element))
+    def check_element(self, el, top=True):
+        if type(el) in (ufl.BrokenElement, ufl.FacetElement,
+                             ufl.InteriorElement, ufl.RestrictedElement,
+                             ufl.HDivElement, ufl.HCurlElement):
+            inner = (el._element, )
+        elif type(el) is ufl.EnrichedElement:
+            inner = el._elements
+        elif type(el) is ufl.TensorProductElement:
+            inner = el.sub_elements()
+        elif isinstance(el, ufl.MixedElement):
+            if not top:
+                raise ValueError("%s modifier must be outermost" % type(el))
+            else:
+                inner = el.sub_elements()
         else:
-            inner = element.sub_elements()
-    else:
-        return
-    for e in inner:
-        check_element(e, top=False)
+            return
+        for e in inner:
+            self.check_element(e, top=False)
 
-
-@timed_function("CreateFunctionSpace")
-def FunctionSpace(mesh, family, degree=None, name=None, vfamily=None,
-                  vdegree=None):
-    print('functionspace')
-    print(mesh)
-    print(family)
-    """Create a :class:`.FunctionSpace`.
-
-    :arg mesh: The mesh to determine the cell from.
-    :arg family: The finite element family.
-    :arg degree: The degree of the finite element.
-    :arg name: An optional name for the function space.
-    :arg vfamily: The finite element in the vertical dimension
-        (extruded meshes only).
-    :arg vdegree: The degree of the element in the vertical dimension
-        (extruded meshes only).
-
-    The ``family`` argument may be an existing
-    :class:`ufl.FiniteElementBase`, in which case all other arguments
-    are ignored and the appropriate :class:`.FunctionSpace` is returned.
-    """
-    element = make_scalar_element(mesh, family, degree, vfamily, vdegree)
-
-    # Support FunctionSpace(mesh, MixedElement)
-    if type(element) is ufl.MixedElement:
-        return MixedFunctionSpace(element, mesh=mesh, name=name)
-
-    # Check that any Vector/Tensor/Mixed modifiers are outermost.
-    check_element(element)
-
-    # Otherwise, build the FunctionSpace.
-    topology = mesh.topology
-    if element.family() == "Real":
-        new = impl.RealFunctionSpace(topology, element, name=name)
-    else:
-        new = impl.FunctionSpace(topology, element, name=name)
-    if mesh is not topology:
-        return impl.WithGeometry(new, mesh)
-    else:
-        return new
-
-
-def VectorFunctionSpace(mesh, family, degree=None, dim=None,
-                        name=None, vfamily=None, vdegree=None):
-    print(family)
-    print(mesh)
-    print(degree)
-    """Create a rank-1 :class:`.FunctionSpace`.
-
-    :arg mesh: The mesh to determine the cell from.
-    :arg family: The finite element family.
-    :arg degree: The degree of the finite element.
-    :arg dim: An optional number of degrees of freedom per function
-       space node (defaults to the geometric dimension of the mesh).
-    :arg name: An optional name for the function space.
-    :arg vfamily: The finite element in the vertical dimension
-        (extruded meshes only).
-    :arg vdegree: The degree of the element in the vertical dimension
-        (extruded meshes only).
-
-    The ``family`` argument may be an existing
-    :class:`ufl.FiniteElementBase`, in which case all other arguments
-    are ignored and the appropriate :class:`.FunctionSpace` is
-    returned.  In this case, the provided element must have an empty
-    :meth:`ufl.FiniteElementBase.value_shape`.
-
-    .. note::
-
-       The element that you provide need be a scalar element (with
-       empty ``value_shape``), however, it should not be an existing
-       :class:`~ufl.classes.VectorElement`.  If you already have an
-       existing :class:`~ufl.classes.VectorElement`, you should pass
-       it to :func:`FunctionSpace` directly instead.
-
-    """
-    sub_element = make_scalar_element(mesh, family, degree, vfamily, vdegree)
-    dim = dim or mesh.ufl_cell().geometric_dimension()
-    element = ufl.VectorElement(sub_element, dim=dim)
-    return FunctionSpace(mesh, element, name=name)
-
-
-def TensorFunctionSpace(mesh, family, degree=None, shape=None,
-                        symmetry=None, name=None, vfamily=None,
-                        vdegree=None):
-    """Create a rank-2 :class:`.FunctionSpace`.
-
-    :arg mesh: The mesh to determine the cell from.
-    :arg family: The finite element family.
-    :arg degree: The degree of the finite element.
-    :arg shape: An optional shape for the tensor-valued degrees of
-       freedom at each function space node (defaults to a square
-       tensor using the geometric dimension of the mesh).
-    :arg symmetry: Optional symmetries in the tensor value.
-    :arg name: An optional name for the function space.
-    :arg vfamily: The finite element in the vertical dimension
-        (extruded meshes only).
-    :arg vdegree: The degree of the element in the vertical dimension
-        (extruded meshes only).
-
-    The ``family`` argument may be an existing
-    :class:`~ufl.classes.FiniteElementBase`, in which case all other arguments
-    are ignored and the appropriate :class:`.FunctionSpace` is
-    returned.  In this case, the provided element must have an empty
-    :meth:`~ufl.classes.FiniteElementBase.value_shape`.
-
-    .. note::
-
-       The element that you provide must be a scalar element (with
-       empty ``value_shape``).  If you already have an existing
-       :class:`~ufl.classes.TensorElement`, you should pass it to
-       :func:`FunctionSpace` directly instead.
-    """
-    sub_element = make_scalar_element(mesh, family, degree, vfamily, vdegree)
-    shape = shape or (mesh.ufl_cell().geometric_dimension(),) * 2
-    element = ufl.TensorElement(sub_element, shape=shape, symmetry=symmetry)
-    return FunctionSpace(mesh, element, name=name)
-
-
-def MixedFunctionSpace(spaces, name=None, mesh=None):
-    """Create a :class:`.MixedFunctionSpace`.
-
-    :arg spaces: An iterable of constituent spaces, or a
-        :class:`~ufl.classes.MixedElement`.
-    :arg name: An optional name for the mixed function space.
-    :arg mesh: An optional mesh.  Must be provided if spaces is a
-        :class:`~ufl.classes.MixedElement`, ignored otherwise.
-    """
-    if isinstance(spaces, ufl.FiniteElementBase):
-        # Build the spaces if we got a mixed element
-        assert type(spaces) is ufl.MixedElement and mesh is not None
-        sub_elements = []
-
-        def rec(eles):
-            for ele in eles:
-                # Only want to recurse into MixedElements
-                if type(ele) is ufl.MixedElement:
-                    rec(ele.sub_elements())
-                else:
-                    sub_elements.append(ele)
-        rec(spaces.sub_elements())
-        spaces = [FunctionSpace(mesh, element) for element in sub_elements]
-
-    # Check that function spaces are on the same mesh
-    meshes = [space.mesh() for space in spaces]
-    for i in range(1, len(meshes)):
-        if meshes[i] is not meshes[0]:
-            raise ValueError("All function spaces must be defined on the same mesh!")
-
-    # Select mesh
-    mesh = meshes[0]
-    # Get topological spaces
-    spaces = tuple(s.topological for s in flatten(spaces))
-    # Error checking
-    for space in spaces:
-        if type(space) in (impl.FunctionSpace, impl.RealFunctionSpace):
-            continue
-        elif type(space) is impl.ProxyFunctionSpace:
-            if space.component is not None:
-                raise ValueError("Can't make mixed space with %s" % space)
-            continue
+    def build_function_space(self):
+        if self.element.family() == "Real":
+            self.function_space = impl.RealFunctionSpace(self.topology, self.element, name=self.name)
         else:
-            raise ValueError("Can't make mixed space with %s" % type(space))
+            self.function_space = impl.FunctionSpace(self.topology, self.element, name=self.name)
+        if self.mesh is not self.topology:
+            self.function_space = impl.WithGeometry(self.function_space, self.mesh)
 
-    new = impl.MixedFunctionSpace(spaces, name=name)
-    if mesh is not mesh.topology:
-        return impl.WithGeometry(new, mesh)
-    return new
+    def get_element(self):
+        self.element = self.create_element()
+
+
+
+class VectorFunctionSpace(FunctionSpace):
+
+    def __init__(self, mesh, family, degree=None, dim=None, name=None,
+                 vfamily=None, vdegree=None):
+        self.dim = dim or mesh.ufl_cell().geometric_dimension()
+        super().__init__(mesh, family, degree, name, vfamily, vdegree)
+        print('=========== IN VECTORFUNCTIONSPACE ===========')
+        print('MESH:')
+        print(self.mesh)
+        print('FAMILY:')
+        print(self.family)
+        print('========================================\n')
+
+
+    def get_element(self):
+        sub_element = self.create_element()
+        print(sub_element)
+        self.element = ufl.VectorElement(sub_element, dim=self.dim)
+        # Check that any Vector/Tensor/Mixed modifiers are outermost.
+        self.check_element(self.element)
+        self.element.reconstruct(cell=self.cell)
+
+class TensorFunctionSpace(FunctionSpace):
+
+    def __init__(self, mesh, family, degree=None, shape=None, symmetry=None,
+                 name=None, vfamily=None, vdegree=None):
+        self.shape = shape
+        self.symmetry = symmetry
+        super().__init__(mesh, family, degree, name, vfamily, vdegree)
+
+    def create_element(self):
+        self.mesh.init()
+        self.topology = self.mesh.topology
+        self.cell = self.topology.ufl_cell()
+        if isinstance(self.cell, ufl.TensorProductCell) \
+           and self.vfamily is not None and self.vdegree is not None:
+            la = ufl.FiniteElement(self.family, cell=cell.sub_cells()[0], degree=self.degree)
+            # If second element was passed in, use it
+            lb = ufl.FiniteElement(self.vfamily, cell=ufl.interval, degree=self.vdegree)
+            # Now make the TensorProductElement
+            self.element = ufl.TensorProductElement(la, lb)
+        else:
+            self.element = ufl.FiniteElement(self.family, cell=cell, degree=self.degree)
+
+
+    def get_element(self):
+        sub_element = self.create_element()
+        self.shape = self.shape or (self.mesh.ufl_cell().geometric_dimension(),) * 2
+        self.element = ufl.TensorElement(sub_element, shape=self.shape, symmetry=self.symmetry)
+        # Check that any Vector/Tensor/Mixed modifiers are outermost.
+        self.check_element(self.element)
+        self.element.reconstruct(cell=self.cell)
+
+class MixedFunctionSpace(FunctionSpace):
+
+    def __init__(self, spaces, name=None, mesh=None):
+        super().__init__(mesh, name=name)
+        self.spaces = spaces
+
+
+    def build_spaces(self, sub_elements):
+        self.mesh.init()
+        self.topology = self.mesh.topology
+        cell = topology.ufl_cell()
+        element = family.reconstruct(cell=self.cell)
+        return MixedFunctionSpace(element, mesh=self.mesh, name=self.name)
+
+    def get_element(self):
+        if isinstance(self.spaces, ufl.FiniteElementBase):
+            # Build the spaces if we got a mixed element
+            assert type(self.spaces) is ufl.MixedElement and self.mesh is not None
+            sub_elements = []
+
+            def rec(eles):
+                for ele in eles:
+                    # Only want to recurse into MixedElements
+                    if type(ele) is ufl.MixedElement:
+                        rec(ele.sub_elements())
+                    else:
+                        sub_elements.append(ele)
+            rec(self.spaces.sub_elements())
+            self.spaces = [self.build_spaces(element) for element in sub_elements]
+
+        # Check that function spaces are on the same mesh
+        meshes = [space.mesh() for space in self.spaces]
+        for i in range(1, len(meshes)):
+            if meshes[i] is not meshes[0]:
+                raise ValueError("All function spaces must be defined on the same mesh!")
+
+        # Select mesh
+        self.mesh = meshes[0]
+        # Get topological spaces
+        self.spaces = tuple(s.topological for s in flatten(self.spaces))
+        # Error checking
+        for space in self.spaces:
+            if type(space) in (impl.FunctionSpace, impl.RealFunctionSpace):
+                continue
+            elif type(space) is impl.ProxyFunctionSpace:
+                if space.component is not None:
+                    raise ValueError("Can't make mixed space with %s" % space)
+                continue
+            else:
+                raise ValueError("Can't make mixed space with %s" % type(space))
+
+    def build_function_space(self):
+        self.functionspace = impl.MixedFunctionSpace(self.spaces, name=name)
+        if self.mesh is not self.topology:
+            self.functionspace = impl.WithGeometry(self.functionspace, self.mesh)

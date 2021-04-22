@@ -99,9 +99,13 @@ def check_element(element, top=True):
 @timed_function("CreateFunctionSpace")
 def FunctionSpace(mesh, family, degree=None, name=None, vfamily=None,
                   vdegree=None):
-    print('functionspace')
+    print('=========== IN FUNCTIONSPACE ===========')
+    print('MESH:')
     print(mesh)
+    print('FAMILY:')
     print(family)
+    print('========================================\n')
+
     """Create a :class:`.FunctionSpace`.
 
     :arg mesh: The mesh to determine the cell from.
@@ -140,9 +144,13 @@ def FunctionSpace(mesh, family, degree=None, name=None, vfamily=None,
 
 def VectorFunctionSpace(mesh, family, degree=None, dim=None,
                         name=None, vfamily=None, vdegree=None):
-    print(family)
+    print('=========== IN VECTORFUNCTIONSPACE ===========')
+    print('MESH:')
     print(mesh)
-    print(degree)
+    print('FAMILY:')
+    print(family)
+    print('========================================\n')
+
     """Create a rank-1 :class:`.FunctionSpace`.
 
     :arg mesh: The mesh to determine the cell from.

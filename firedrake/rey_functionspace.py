@@ -25,6 +25,12 @@ class FunctionSpace:
         self.vdegree = vdegree
         self.get_element()
         self.build_function_space()
+        print('=========== IN FUNCTIONSPACE ===========')
+        print('MESH:')
+        print(self.mesh)
+        print('FAMILY:')
+        print(self.family)
+        print('========================================\n')
 
         return self.function_space
 
@@ -71,9 +77,14 @@ class VectorFunctionSpace(FunctionSpace):
     def __init__(self, mesh, family, degree=None, dim=None, name=None,
                  vfamily=None, vdegree=None):
         self.dim = dim or mesh.ufl_cell().geometric_dimension()
-        print('hello')
-        print(mesh)
         super().__init__(mesh, family, degree, name, vfamily, vdegree)
+        print('=========== IN VECTORFUNCTIONSPACE ===========')
+        print('MESH:')
+        print(self.mesh)
+        print('FAMILY:')
+        print(self.family)
+        print('========================================\n')
+
 
     def get_element(self):
         sub_element = self.create_element()
