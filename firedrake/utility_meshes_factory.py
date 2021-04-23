@@ -1,0 +1,2420 @@
+import numpy as np
+
+import ufl
+
+from pyop2.mpi import COMM_WORLD
+from firedrake.utils import IntType, RealType, ScalarType
+
+from firedrake import VectorFunctionSpace, Function, Constant, \
+    par_loop, dx, WRITE, READ, interpolate, FiniteElement, interval, tetrahedron
+from firedrake.cython import dmcommon
+from firedrake import mesh
+from firedrake import function
+from firedrake import functionspace
+
+from pyadjoint.tape import no_annotations
+
+from abc import ABC, abstractmethod
+
+
+class IMeshFactory(metaclass=ABC):
+    """
+    Abstract Mesh Factory Interface
+    """
+    @staticmethod
+    @abstractmethod
+    def getMesh(mesh_type):
+        """
+        The static abstract mesh factory interface method
+        """
+        pass
+
+
+class MeshFactory(IMeshFactory):
+    """
+    Abstract Mesh concrete class
+    """
+    @staticmethod
+    def getMesh(mesh_type):
+        """
+        Static getMesh method
+        """
+        try:
+            if mesh_type in ['IntervalMesh', 'UnitIntervalMesh']:
+                return IntervalMeshFactory.getMesh(mesh_type)
+            elif mesh_type in ['PeriodicIntervalMesh', 'PeriodicUnitIntervalMesh']:
+                return IntervalMeshFactory.getMesh(mesh_type)
+            elif mesh_type in ['UnitTriangleMesh']:
+                return UnitTriangleMeshFactory.getMesh(mesh_type)
+            elif mesh_type in ['RectangleMesh', 'SquareMesh', 'UnitSquareMesh']:
+                return RectangleMeshFactory.getMesh(mesh_type)
+            elif mesh_type in ['PeriodicRectangleMesh', 'PeriodicSquareMesh', 'PeriodicUnitSquareMesh']:
+                return PeriodicRectangleMeshFactory.getMesh(mesh_type)
+            elif mesh_type in ['IcosahedralSphereMesh', 'UnitIcosahedralSphereMesh']:
+                return IcosahedralSphereMeshFactory.getMesh(mesh_type)
+            elif mesh_type in ['OctahedralSphereMesh', 'UnitOctahedralSphereMesh']:
+                return OctahedralSphereMeshFactory.getMesh(mesh_type)
+            elif mesh_type in ['CubedSphereMesh', 'UnitCubedSphereMesh']:
+                return CubedSphereMeshFactory.getMesh(mesh_type)
+            elif mesh_type in ['TorusMesh']:
+                return TorusMeshFactory.getMesh(mesh_type)
+            elif mesh_type in ['CylinderMesh']:
+                return CylinderMeshFactory.getMesh(mesh_type)
+            elif mesh_type in ['PartiallyPeriodicRectangleMesh']:
+                return PartiallyPeriodicRectangleMeshFactory.getMesh(mesh_type)
+            raise Exception('No Factory Found')
+        except Exception as _e:
+            print(_e)
+        return None
+
+
+class AbstractMesh(ABC):
+    """
+    Abstract mesh factory. Defines high-level functions.
+    """
+    @abstractmethod
+    def BuildMesh(self):
+        pass
+
+    @abstractmethod
+    def GetMesh(self):
+        pass
+
+
+class IntervalMeshFactory:
+    """
+    Factory for the Interval Mesh types
+    """
+    @staticmethod
+    def getMesh(m):
+        """
+        Static get mesh method
+        """
+        try:
+            if m == 'IntervalMesh':
+                return IntervalMesh()
+            elif m == 'UnitIntervalMesh':
+                return UnitIntervalMesh()
+            raise Exception('Interval mesh type not found.')
+        except Exception as _e:
+            print(_e)
+        return None
+
+
+class PeriodicIntervalMeshFactory:
+    """
+    Factory for the Periodic Interval Mesh types
+    """
+    @staticmethod
+    def getMesh(m):
+        """
+        Static get mesh method
+        """
+        try:
+            if m == 'PeriodicIntervalMesh':
+                return PeriodicIntervalMesh()
+            elif m == 'PeriodicUnitIntervalMesh':
+                return PeriodicUnitIntervalMesh()
+            raise Exception('Periodic Interval mesh type not found.')
+        except Exception as _e:
+            print(_e)
+        return None
+
+
+class UnitTriangleMeshFactory:
+    """
+    Factory for the Unit Triangle Mesh type
+    """
+    @staticmethod
+    def getUnitMesh(m):
+        """
+        Static get mesh method
+        """
+        try:
+            if m == 'UnitTriangleMesh':
+                return UnitTriangleMesh()
+            raise Exception('Unit Triangle mesh type not found.')
+        except Exception as _e:
+            print(_e)
+        return None
+
+
+class RectangleMeshFactory:
+    """
+    Factory for the Rectangle Mesh type
+    """
+    @staticmethod
+    def getMesh(m):
+        """
+        Static get mesh method
+        """
+        try:
+            if m == 'RectangleMesh':
+                return RectangleMesh()
+            elif m == 'SquareMesh':
+                return SquareMesh()
+            elif m == 'UnitSquareMesh':
+                return UnitSquareMesh()
+            raise Exception('Rectangle mesh type not found.')
+        except Exception as _e:
+            print(_e)
+        return None
+
+
+class PeriodicRectangleMeshFactory:
+    """
+    Factory for the Periodic Rectangle Mesh type
+    """
+    @staticmethod
+    def getMesh(m):
+        """
+        Static get mesh method
+        """
+        try:
+            if m == 'PeriodicRectangleMesh':
+                return PeriodicRectangleMesh()
+            elif m == 'PeriodicSquareMesh':
+                return PeriodicSquareMesh()
+            elif m == 'PeriodicUnitSquareMesh':
+                return PeriodicUnitSquareMesh()
+            raise Exception('Periodic Rectangle mesh type not found.')
+        except Exception as _e:
+            print(_e)
+        return None
+
+
+class CircleManifoldMeshFactory:
+    """
+    Factory for the Circle Manifold Mesh type
+    """
+    @staticmethod
+    def getMesh(m):
+        """
+        Static get mesh method
+        """
+        try:
+            if m == 'CircleManifoldMesh':
+                return CircleManifoldMesh()
+            raise Exception('Circle Manifold mesh type not found.')
+        except Exception as _e:
+            print(_e)
+        return None
+
+
+class UnitDiskMeshFactory:
+    """
+    Factory for the Unit Disk Mesh type
+    """
+    @staticmethod
+    def getMesh(m):
+        """
+        Static get mesh method
+        """
+        try:
+            if m == 'UnitDiskMesh':
+                return UnitDiskMesh()
+            raise Exception('Unit Disk mesh type not found.')
+        except Exception as _e:
+            print(_e)
+        return None
+
+
+class UnitTetrahedronFactory:
+    """
+    Factory for the Unit Tetrahedron Mesh type
+    """
+    @staticmethod
+    def getMesh(m):
+        """
+        Static get mesh method
+        """
+        try:
+            if m == 'UnitTetrahedronMesh':
+                return UnitTetrahedronMesh()
+            raise Exception('Unit Tetrahedron mesh type not found.')
+        except Exception as _e:
+            print(_e)
+        return None
+
+
+class BoxMeshFactory:
+    """
+    Factory for the Box Mesh type
+    """
+    @staticmethod
+    def getMesh(m):
+        """
+        Static get mesh method
+        """
+        try:
+            if m == 'BoxMesh':
+                return BoxMesh()
+            elif m == 'CubeMesh':
+                return CubeMesh()
+            elif m == 'UnitCubeMesh':
+                return UnitCubeMesh()
+            raise Exception('Box mesh type not found.')
+        except Exception as _e:
+            print(_e)
+        return None
+
+
+class PeriodicBoxMeshFactory:
+    """
+    Factory for the Periodic Box Mesh type
+    """
+    @staticmethod
+    def getMesh(m):
+        """
+        Static get mesh method
+        """
+        try:
+            if m == 'PeriodicBoxMesh':
+                return PeriodicBoxMesh()
+            elif m == 'PeriodicUnitCubeMesh':
+                return PeriodicUnitCubeMesh()
+            raise Exception('Periodic Box mesh type not found.')
+        except Exception as _e:
+            print(_e)
+        return None
+
+
+class IcosahedralSphereMeshFactory:
+    """
+    Factory for the Icosahedral Sphere Mesh type
+    """
+    @staticmethod
+    def getMesh(m):
+        """
+        Static get mesh method
+        """
+        try:
+            if m == 'IcosahedralSphereMesh':
+                return IcosahedralSphereMesh()
+            elif m == 'UnitIcosahedralSphereMesh':
+                return UnitIcosahedralSphereMesh()
+            raise Exception('Icosahedral Sphere mesh type not found.')
+        except Exception as _e:
+            print(_e)
+        return None
+
+
+class OctahedralSphereMeshFactory:
+    """
+    Factory for the Octahedral Sphere Mesh type
+    """
+    @staticmethod
+    def getMesh(m):
+        """
+        Static get mesh method
+        """
+        try:
+            if m == 'OctahedralSphereMesh':
+                return OctahedralSphereMesh()
+            elif m == 'UnitOctahedralSphereMesh':
+                return UnitOctahedralSphereMesh()
+            raise Exception('Octahedral Sphere mesh type not found.')
+        except Exception as _e:
+            print(_e)
+        return None
+
+
+class CubedSphereMeshFactory:
+    """
+    Factory for the Cubed Sphere Mesh type
+    """
+    @staticmethod
+    def getMesh(m):
+        """
+        Static get mesh method
+        """
+        try:
+            if m == 'CubedSphereMesh':
+                return CubedSphereMesh()
+            elif m == 'UnitCubedSphereMesh':
+                return UnitCubedSphereMesh()
+            raise Exception('Cubed Sphere mesh type not found.')
+        except Exception as _e:
+            print(_e)
+        return None
+
+
+class TorusMeshFactory:
+    """
+    Factory for the Torus Mesh type
+    """
+    @staticmethod
+    def getMesh(m):
+        """
+        Static get mesh method
+        """
+        try:
+            if m == 'TorusMesh':
+                return TorusMesh()
+            raise Exception('Torus mesh type not found.')
+        except Exception as _e:
+            print(_e)
+        return None
+
+
+class CylinderMeshFactory:
+    """
+    Factory for the Cylinder Mesh type
+    """
+    @staticmethod
+    def getMesh(m):
+        """
+        Static get mesh method
+        """
+        try:
+            if m == 'CylinderMesh':
+                return CylinderMesh()
+            raise Exception('Cylinder mesh type not found.')
+        except Exception as _e:
+            print(_e)
+        return None
+
+
+class PartiallyPeriodicRectangleMeshFactory:
+    """
+    Factory for the Partially Periodic Rectangle Mesh type
+    """
+    @staticmethod
+    def getMesh(m):
+        """
+        Static get mesh method
+        """
+        try:
+            if m == 'PartiallyPeriodicRectangleMesh':
+                return PartiallyPeriodicRectangleMesh()
+            raise Exception('Partially Periodic Rectangle mesh type not found.')
+        except Exception as _e:
+            print(_e)
+        return None
+
+
+class IntervalMesh(AbstractMesh):
+    """
+    Generate a uniform mesh of an interval.
+    """
+    def __init__(self, ncells, length_or_left, right=None, distribution_parameters=None,
+                 comm=COMM_WORLD):
+        """
+        :arg ncells: The number of the cells over the interval.
+        :arg length_or_left: The length of the interval (if ``right``
+             is not provided) or else the left hand boundary point.
+        :arg right: (optional) position of the right
+             boundary point (in which case ``length_or_left`` should
+             be the left boundary point).
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+        The left hand boundary point has boundary marker 1,
+        while the right hand point has marker 2.
+        """
+        if ncells <= 0 or ncells % 1:
+            raise ValueError("Number of cells must be a positive integer")
+
+        if right is None:
+            self.left = 0
+            self.right = length_or_left
+        else:
+            self.left = length_or_left
+
+        self.length = self.right - self.left
+        if self.length < 0:
+            raise ValueError("Requested mesh has negative length")
+
+        self.ncells = ncells
+        self.distribution_parameters = distribution_parameters
+        self.comm = comm
+
+        self.mesh = None
+        self.BuildMesh()
+
+    def BuildMesh(self):
+        dx = self.length / self.ncells
+        # This ensures the rightmost point is actually present.
+        coords = np.arange(self.left, self.right + 0.01 * dx, dx, dtype=np.double).reshape(-1, 1)
+        cells = np.dstack((np.arange(0, len(coords) - 1, dtype=np.int32),
+                           np.arange(1, len(coords), dtype=np.int32))).reshape(-1, 2)
+        plex = mesh._from_cell_list(1, cells, coords, self.comm)
+        # Apply boundary IDs
+        plex.createLabel(dmcommon.FACE_SETS_LABEL)
+        coordinates = plex.getCoordinates()
+        coord_sec = plex.getCoordinateSection()
+        vStart, vEnd = plex.getDepthStratum(0)  # vertices
+        for v in range(vStart, vEnd):
+            vcoord = plex.vecGetClosure(coord_sec, coordinates, v)
+            if vcoord[0] == coords[0]:
+                plex.setLabelValue(dmcommon.FACE_SETS_LABEL, v, 1)
+            if vcoord[0] == coords[-1]:
+                plex.setLabelValue(dmcommon.FACE_SETS_LABEL, v, 2)
+
+        self.mesh = mesh.Mesh(plex, reorder=False, distribution_parameters=self.distribution_parameters)
+
+    def GetMesh(self):
+        """
+        Return mesh
+        """
+        return self.mesh
+
+
+class UnitIntervalMesh(IntervalMesh):
+    """
+    Generate a uniform mesh of the interval [0,1].
+    :arg ncells: The number of the cells over the interval.
+    :kwarg comm: Optional communicator to build the mesh on (defaults to
+        COMM_WORLD).
+    The left hand (:math:`x=0`) boundary point has boundary marker 1,
+    while the right hand (:math:`x=1`) point has marker 2.
+    """
+    def __init__(self, ncells, distribution_parameters=None, comm=COMM_WORLD):
+        super().__init__(ncells, length_or_left=1.0, distribution_parameters=distribution_parameters,
+                         comm=comm)
+
+
+class PeriodicIntervalMesh(AbstractMesh):
+    """Generate a periodic mesh of an interval.
+    :arg ncells: The number of cells over the interval.
+    :arg length: The length the interval.
+    :kwarg comm: Optional communicator to build the mesh on (defaults to
+        COMM_WORLD).
+    """
+    def __init__(self, ncells, length, distribution_parameters=None, comm=COMM_WORLD):
+        if ncells < 3:
+            raise ValueError("1D periodic meshes with fewer than 3 \
+                             cells are not currently supported")
+        self.mesh = None
+        self.ncells = ncells
+        self.length = length
+        self.distribution_parameters = distribution_parameters
+        self.comm = comm
+        self.BuildMesh()
+
+    def BuildMesh(self):
+        """
+        Build mesh.
+        """
+        mesh_ = CircleManifoldMesh(self.ncells, distribution_parameters=self.distribution_parameters, comm=self.comm)
+        m = mesh_.GetMesh()
+        coord_fs = VectorFunctionSpace(m, FiniteElement('DG', interval, 1, variant="equispaced"), dim=1)
+        old_coordinates = m.coordinates
+        new_coordinates = Function(coord_fs)
+
+        domain = "{ [i, j] : 0 <= i, j < 2 }"
+        instructions = f"""
+            <{RealType}> eps = 1e-12
+            <{RealType}> pi = 3.141592653589793
+            <{RealType}> oc[i, j] = real(old_coords[i, j])
+            <{RealType}> a = atan2(oc[0, 1], oc[0, 0]) / (2*pi)
+            <{RealType}> b = atan2(oc[1, 1], oc[1, 0]) / (2*pi)
+            <{IntType}> swap = 1 if a >= b else 0
+            <{RealType}> aa = fmin(a, b)
+            <{RealType}> bb = fmax(a, b)
+            <{RealType}> bb_abs = abs(bb)
+            bb = (1.0 if aa < -eps else bb) if bb_abs < eps else bb
+            aa = aa + 1 if aa < -eps else aa
+            bb = bb + 1 if bb < -eps else bb
+            a = bb if swap == 1 else aa
+            b = aa if swap == 1 else bb
+            new_coords[0] = a * L[0]
+            new_coords[1] = b * L[0]
+            """
+
+        cL = Constant(self.length)
+
+        par_loop((domain, instructions), dx,
+                 {"new_coords": (new_coordinates, WRITE),
+                  "old_coords": (old_coordinates, READ),
+                  "L": (cL, READ)},
+                 is_loopy_kernel=True)
+
+        self.mesh = mesh.Mesh(new_coordinates)
+
+    def GetMesh(self):
+        """
+        Return mesh
+        """
+        return self.mesh
+
+
+class PeriodicUnitIntervalMesh(PeriodicIntervalMesh):
+    """
+    Generate a periodic mesh of the unit interval
+    """
+    def __init__(self, ncells, distribution_parameters=None, comm=COMM_WORLD):
+        super().__init__(ncells=ncells, length=1.0, distribution_parameters=distribution_parameters, comm=comm)
+
+
+class OneElementThickMesh(AbstractMesh):
+    """
+    Generate a rectangular mesh in the domain with corners [0,0]
+    and [Lx, Ly] with ncells, that is periodic in the x-direction.
+    """
+    def __init__(self, ncells, Lx, Ly, distribution_parameters=None, comm=COMM_WORLD):
+        """
+        :arg ncells: The number of cells in the mesh.
+        :arg Lx: The width of the domain in the x-direction.
+        :arg Ly: The width of the domain in the y-direction.
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+        """
+        self.ncells = ncells
+        self.Lx = Lx
+        self.Ly = Ly
+        self.distribution_parameters = distribution_parameters
+        self.left = np.arange(self.ncells, dtype=np.int32)
+        self.right = np.roll(self.left, -1)
+        self.cells = np.array([self.left, self.left, self.right, self.right]).T
+        self.comm = comm
+        self.mesh = None
+        self.BuildMesh()
+
+    def BuildMesh(self):
+        """
+        Build mesh.
+        """
+        dx = self.Lx / self.ncells
+        X = np.arange(1.0 * self.ncells, dtype=np.double) * dx
+        Y = 0. * X
+        coords = np.array([X, Y]).T
+        # a line of coordinates, with a looped topology
+        plex = mesh._from_cell_list(2, self.cells, coords, self.comm)
+        mesh1 = mesh.Mesh(plex, distribution_parameters=self.distribution_parameters)
+        mesh1.topology.init()
+        cell_numbering = mesh1._cell_numbering
+        cell_range = plex.getHeightStratum(0)
+        cell_closure = np.zeros((cell_range[1], 9), dtype=IntType)
+
+        # Get the coordinates for this process
+        coords = plex.getCoordinatesLocal().array_r
+        # get the PETSc section
+        coords_sec = plex.getCoordinateSection()
+
+        for e in range(*cell_range):
+
+            closure, orient = plex.getTransitiveClosure(e)
+
+            # get the row for this cell
+            row = cell_numbering.getOffset(e)
+
+            # run some checks
+            assert (closure[0] == e)
+            assert len(closure) == 7, closure
+            edge_range = plex.getHeightStratum(1)
+            assert (all(closure[1:5] >= edge_range[0]))
+            assert (all(closure[1:5] < edge_range[1]))
+            vertex_range = plex.getHeightStratum(2)
+            assert (all(closure[5:] >= vertex_range[0]))
+            assert (all(closure[5:] < vertex_range[1]))
+
+            # enter the cell number
+            cell_closure[row][8] = e
+
+            # Get a list of unique edges
+            edge_set = list(set(closure[1:5]))
+
+            # there are two vertices in the cell
+            cell_vertices = closure[5:]
+            cell_X = np.array([0., 0.], dtype=ScalarType)
+            for i, v in enumerate(cell_vertices):
+                cell_X[i] = coords[coords_sec.getOffset(v)]
+
+            # Add in the edges
+            for i in range(3):
+                # count up how many times each edge is repeated
+                repeats = list(closure[1:5]).count(edge_set[i])
+                if repeats == 2:
+                    # we have a y-periodic edge
+                    cell_closure[row][6] = edge_set[i]
+                    cell_closure[row][7] = edge_set[i]
+                elif repeats == 1:
+                    # in this code we check if it is a right edge, or a left edge
+                    # by inspecting the x coordinates of the edge vertex (1)
+                    # and comparing with the x coordinates of the cell vertices (2)
+
+                    # there is only one vertex on the edge in this case
+                    edge_vertex = plex.getCone(edge_set[i])[0]
+
+                    # get X coordinate for this edge
+                    edge_X = coords[coords_sec.getOffset(edge_vertex)]
+                    # get X coordinates for this cell
+                    if (cell_X.min() < dx / 2):
+                        if cell_X.max() < 3 * dx / 2:
+                            # We are in the first cell
+                            if (edge_X.min() < dx / 2):
+                                # we are on left hand edge
+                                cell_closure[row][4] = edge_set[i]
+                            else:
+                                # we are on right hand edge
+                                cell_closure[row][5] = edge_set[i]
+                        else:
+                            # We are in the last cell
+                            if (edge_X.min() < dx / 2):
+                                # we are on right hand edge
+                                cell_closure[row][5] = edge_set[i]
+                            else:
+                                # we are on left hand edge
+                                cell_closure[row][4] = edge_set[i]
+                    else:
+                        if (abs(cell_X.min() - edge_X.min()) < dx / 2):
+                            # we are on left hand edge
+                            cell_closure[row][4] = edge_set[i]
+                        else:
+                            # we are on right hand edge
+                            cell_closure[row][5] = edge_set[i]
+
+            # Add in the vertices
+            vertices = closure[5:]
+            v1 = vertices[0]
+            v2 = vertices[1]
+            x1 = coords[coords_sec.getOffset(v1)]
+            x2 = coords[coords_sec.getOffset(v2)]
+            # Fix orientations
+            if (x1 > x2):
+                if (x1 - x2 < dx * 1.5):
+                    # we are not on the rightmost cell and need to swap
+                    v1, v2 = v2, v1
+            elif (x2 - x1 > dx * 1.5):
+                # we are on the rightmost cell and need to swap
+                v1, v2 = v2, v1
+
+            cell_closure[row][0:4] = [v1, v1, v2, v2]
+
+        mesh1.topology.cell_closure = np.array(cell_closure, dtype=IntType)
+
+        mesh1.init()
+
+        fe_dg = FiniteElement('DQ', mesh1.ufl_cell(), 1, variant="equispaced")
+        Vc = VectorFunctionSpace(mesh1, fe_dg)
+        fc = Function(Vc).interpolate(mesh1.coordinates)
+
+        mash = mesh.Mesh(fc)
+        topverts = Vc.cell_node_list[:, 1::2].flatten()
+        mash.coordinates.dat.data_with_halos[topverts, 1] = self.Ly
+
+        # search for the last cell
+        mcoords_ro = mash.coordinates.dat.data_ro_with_halos
+        mcoords = mash.coordinates.dat.data_with_halos
+        for e in range(*cell_range):
+            cell = cell_numbering.getOffset(e)
+            cell_nodes = Vc.cell_node_list[cell, :]
+            Xvals = mcoords_ro[cell_nodes, 0]
+            if Xvals.max() - Xvals.min() > self.Lx / 2:
+                mcoords[cell_nodes[2:], 0] = self.Lx
+            else:
+                mcoords
+
+        local_facet_dat = mash.topology.interior_facets.local_facet_dat
+
+        lfd = local_facet_dat.data
+        for i in range(lfd.shape[0]):
+            if all(lfd[i, :] == np.array([3, 3])):
+                lfd[i, :] = [2, 3]
+
+        self.mesh = mash
+
+    def GetMesh(self):
+        """
+        Return mesh
+        """
+        return self.mesh
+
+
+class UnitTriangleMesh(AbstractMesh):
+    """
+    Generate a mesh of the reference triangle
+    """
+    def __init__(self, comm=COMM_WORLD):
+        """
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+        COMM_WORLD).
+        """
+        self.comm = comm
+        self.coords = [[0., 0.], [1., 0.], [0., 1.]]
+        self.cells = [[0, 1, 2]]
+        self.mesh = None
+        self.BuildMesh()
+
+    def BuildMesh(self):
+        """
+        Build mesh
+        """
+        plex = mesh._from_cell_list(2, self.cells, self.coords, self.comm)
+        self.mesh = mesh.Mesh(plex, reorder=False)
+
+    def GetMesh(self):
+        """
+        Return mesh
+        """
+        return self.mesh
+
+
+class RectangleMesh(AbstractMesh):
+    """
+    Generate a rectangular mesh
+    """
+    def __init__(self, nx, ny, Lx, Ly, quadrilateral=False, reorder=None,
+                 diagonal="left", distribution_parameters=None, comm=COMM_WORLD):
+        """
+        :arg nx: The number of cells in the x direction
+        :arg ny: The number of cells in the y direction
+        :arg Lx: The extent in the x direction
+        :arg Ly: The extent in the y direction
+        :kwarg quadrilateral: (optional), creates quadrilateral mesh, defaults to False
+        :kwarg reorder: (optional), should the mesh be reordered
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+        :kwarg diagonal: For triangular meshes, should the diagonal got
+            from bottom left to top right (``"right"``), or top left to
+            bottom right (``"left"``), or put in both diagonals (``"crossed"``).
+
+        The boundary edges in this mesh are numbered as follows:
+
+        * 1: plane x == 0
+        * 2: plane x == Lx
+        * 3: plane y == 0
+        * 4: plane y == Ly
+        """
+        for n in (nx, ny):
+            if n <= 0 or n % 1:
+                raise ValueError("Number of cells must be a positive integer")
+        self.nx = nx
+        self.ny = ny
+        self.Lx = Lx
+        self.Ly = Ly
+        self.quadrilateral = quadrilateral
+        self.reorder = reorder
+        self.diagonal = diagonal
+        self.distribution_parameters = distribution_parameters
+        self.comm = comm
+        self.mesh = None
+        self.BuildMesh()
+
+    def BuildMesh(self):
+        """
+        Build mesh
+        """
+        xcoords = np.linspace(0.0, self.Lx, self.nx + 1, dtype=np.double)
+        ycoords = np.linspace(0.0, self.Ly, self.ny + 1, dtype=np.double)
+        coords = np.asarray(np.meshgrid(xcoords, ycoords)).swapaxes(0, 2).reshape(-1, 2)
+        # cell vertices
+        i, j = np.meshgrid(np.arange(self.nx, dtype=np.int32), np.arange(self.ny, dtype=np.int32))
+        if not self.quadrilateral and self.diagonal == "crossed":
+            dx = self.Lx * 0.5 / self.nx
+            dy = self.Ly * 0.5 / self.ny
+            xs = np.linspace(dx, self.Lx - dx, self.nx, dtype=np.double)
+            ys = np.linspace(dy, self.Ly - dy, self.ny, dtype=np.double)
+            extra = np.asarray(np.meshgrid(xs, ys)).swapaxes(0, 2).reshape(-1, 2)
+            coords = np.vstack([coords, extra])
+            #
+            # 2-----3
+            # | \ / |
+            # |  4  |
+            # | / \ |
+            # 0-----1
+            cells = [i * (self.ny + 1) + j,
+                     i * (self.ny + 1) + j + 1,
+                     (i + 1) * (self.ny + 1) + j,
+                     (i + 1) * (self.ny + 1) + j + 1,
+                     (self.nx + 1) * (self.ny + 1) + i * self.ny + j]
+            cells = np.asarray(cells).swapaxes(0, 2).reshape(-1, 5)
+            idx = [0, 1, 4, 0, 2, 4, 2, 3, 4, 3, 1, 4]
+            cells = cells[:, idx].reshape(-1, 3)
+        else:
+            cells = [i * (self.ny + 1) + j, i * (self.ny + 1) + j + 1, (i + 1) * (self.ny + 1) + j + 1, (i + 1) * (self.ny + 1) + j]
+            cells = np.asarray(cells).swapaxes(0, 2).reshape(-1, 4)
+            if not self.quadrilateral:
+                if self.diagonal == "left":
+                    idx = [0, 1, 3, 1, 2, 3]
+                elif self.diagonal == "right":
+                    idx = [0, 1, 2, 0, 2, 3]
+                else:
+                    raise ValueError("Unrecognised value for diagonal '%r'", self.diagonal)
+                # two cells per cell above...
+                cells = cells[:, idx].reshape(-1, 3)
+
+        plex = mesh._from_cell_list(2, cells, coords, self.comm)
+
+        # mark boundary facets
+        plex.createLabel(dmcommon.FACE_SETS_LABEL)
+        plex.markBoundaryFaces("boundary_faces")
+        coords = plex.getCoordinates()
+        coord_sec = plex.getCoordinateSection()
+        if plex.getStratumSize("boundary_faces", 1) > 0:
+            boundary_faces = plex.getStratumIS("boundary_faces", 1).getIndices()
+            xtol = self.Lx / (2 * self.nx)
+            ytol = self.Ly / (2 * self.ny)
+            for face in boundary_faces:
+                face_coords = plex.vecGetClosure(coord_sec, coords, face)
+                if abs(face_coords[0]) < xtol and abs(face_coords[2]) < xtol:
+                    plex.setLabelValue(dmcommon.FACE_SETS_LABEL, face, 1)
+                if abs(face_coords[0] - self.Lx) < xtol and abs(face_coords[2] - self.Lx) < xtol:
+                    plex.setLabelValue(dmcommon.FACE_SETS_LABEL, face, 2)
+                if abs(face_coords[1]) < ytol and abs(face_coords[3]) < ytol:
+                    plex.setLabelValue(dmcommon.FACE_SETS_LABEL, face, 3)
+                if abs(face_coords[1] - self.Ly) < ytol and abs(face_coords[3] - self.Ly) < ytol:
+                    plex.setLabelValue(dmcommon.FACE_SETS_LABEL, face, 4)
+
+        self.mesh = mesh.Mesh(plex, reorder=self.reorder, distribution_parameters=self.distribution_parameters)
+
+    def GetMesh(self):
+        """
+        Return mesh
+        """
+        return self.mesh
+
+
+class SquareMesh(RectangleMesh):
+    """
+    Generate a square mesh
+    """
+    def __init__(self, nx, ny, L, reorder=None, quadrilateral=False, diagonal="left",
+                 distribution_parameters=None, comm=COMM_WORLD):
+        """
+        :arg nx: The number of cells in the x direction
+        :arg ny: The number of cells in the y direction
+        :arg L: The extent in the x and y directions
+        :kwarg quadrilateral: (optional), creates quadrilateral mesh, defaults to False
+        :kwarg reorder: (optional), should the mesh be reordered
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+
+        The boundary edges in this mesh are numbered as follows:
+
+        * 1: plane x == 0
+        * 2: plane x == L
+        * 3: plane y == 0
+        * 4: plane y == L
+        """
+        super().__init__(nx, ny, L, L, reorder=reorder, quadrilateral=quadrilateral,
+                         diagonal=diagonal, distribution_parameters=distribution_parameters,
+                         comm=comm)
+
+
+class UnitSquareMesh(SquareMesh):
+    """
+    Generate a unit square mesh
+    """
+    def __init__(self, nx, ny, reorder=None, diagonal="left", quadrilateral=False,
+                 distribution_parameters=None, comm=COMM_WORLD):
+        """
+        :arg nx: The number of cells in the x direction
+        :arg ny: The number of cells in the y direction
+        :kwarg quadrilateral: (optional), creates quadrilateral mesh, defaults to False
+        :kwarg reorder: (optional), should the mesh be reordered
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+
+        The boundary edges in this mesh are numbered as follows:
+
+        * 1: plane x == 0
+        * 2: plane x == 1
+        * 3: plane y == 0
+        * 4: plane y == 1
+        """
+        super().__init__(nx, ny, 1, reorder=reorder, quadrilateral=quadrilateral,
+                         diagonal=diagonal, distribution_parameters=distribution_parameters,
+                         comm=comm)
+
+
+class PeriodicRectangleMesh(AbstractMesh):
+    """
+    Generate a periodic rectangular mesh
+    """
+    def __init__(self, nx, ny, Lx, Ly, direction="both", quadrilateral=False, reorder=None,
+                 distribution_parameters=None, diagonal=None, comm=COMM_WORLD):
+        """
+        :arg nx: The number of cells in the x direction
+        :arg ny: The number of cells in the y direction
+        :arg Lx: The extent in the x direction
+        :arg Ly: The extent in the y direction
+        :arg direction: The direction of the periodicity, one of
+            ``"both"``, ``"x"`` or ``"y"``.
+        :kwarg quadrilateral: (optional), creates quadrilateral mesh, defaults to False
+        :kwarg reorder: (optional), should the mesh be reordered
+        :kwarg diagonal: (optional), one of ``"crossed"``, ``"left"``, ``"right"``. ``"left"`` is the default.
+            Not valid for quad meshes. Only used for direction ``"x"`` or direction ``"y"``.
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+
+        If direction == "x" the boundary edges in this mesh are numbered as follows:
+
+        * 1: plane y == 0
+        * 2: plane y == Ly
+
+        If direction == "y" the boundary edges are:
+
+        * 1: plane x == 0
+        * 2: plane x == Lx
+        """
+        if direction not in ("both", "x", "y"):
+            raise ValueError("Cannot have a periodic mesh with periodicity '%s'" % direction)
+        if nx < 3 or ny < 3:
+            raise ValueError("2D periodic meshes with fewer than 3 \
+        cells in each direction are not currently supported")
+        self.nx = nx
+        self.ny = ny
+        self.Lx = Lx
+        self.Ly = Ly
+        self.direction = direction
+        self.quadrilateral = quadrilateral
+        self.reorder = reorder
+        self.diagonal = diagonal
+        self.distribution_parameters = distribution_parameters
+        self.comm = comm
+        self.mesh = None
+        self.BuildMesh()
+
+    def BuildMesh(self):
+        """
+        Build mesh
+        """
+        if self.direction == "both" and self.ny == 1 and self.quadrilateral:
+            mesh_ = OneElementThickMesh(self.nx, self.Lx, self.Ly,
+                                            distribution_parameters=self.distribution_parameters)
+            self.mesh = mesh_.GetMesh()
+            return
+
+        if self.direction != "both":
+            mesh_ = PartiallyPeriodicRectangleMesh(self.nx, self.ny, self.Lx, self.Ly,
+                                                       direction=self.direction,
+                                                       quadrilateral=self.quadrilateral,
+                                                       reorder=self.reorder,
+                                                       distribution_parameters=self.distribution_parameters,
+                                                       diagonal=self.diagonal, comm=self.comm)
+            self.mesh = mesh_.GetMesh()
+            return
+
+        m = TorusMesh(self.nx, self.ny, 1.0, 0.5, quadrilateral=self.quadrilateral, reorder=self.reorder,
+                      distribution_parameters=self.distribution_parameters, comm=self.comm)
+        coord_family = 'DQ' if self.quadrilateral else 'DG'
+        cell = 'quadrilateral' if self.quadrilateral else 'triangle'
+        coord_fs = VectorFunctionSpace(m, FiniteElement(coord_family, cell, 1, variant="equispaced"), dim=2)
+        old_coordinates = m.coordinates
+        new_coordinates = Function(coord_fs)
+
+        domain = "{[i, j, k, l]: 0 <= i, k < old_coords.dofs and 0 <= j < new_coords.dofs and 0 <= l < 3}"
+        instructions = f"""
+            <{RealType}> pi = 3.141592653589793
+            <{RealType}> eps = 1e-12
+            <{RealType}> bigeps = 1e-1
+            <{RealType}> oc[k, l] = real(old_coords[k, l])
+            <{RealType}> Y = 0
+            <{RealType}> Z = 0
+            for i
+                Y = Y + oc[i, 1]
+                Z = Z + oc[i, 2]
+            end
+            for j
+                <{RealType}> phi = atan2(oc[j, 1], oc[j, 0])
+                <{RealType}> theta1 = atan2(oc[j, 2], oc[j, 1] / sin(phi) - 1)
+                <{RealType}> theta2 = atan2(oc[j, 2], oc[j, 0] / cos(phi) - 1)
+                <{RealType}> abssin = abs(sin(phi))
+                <{RealType}> theta = theta1 if abssin > bigeps else theta2
+                <{RealType}> nc0 = phi / (2 * pi)
+                <{RealType}> absnc = 0
+                nc0 = nc0 + 1 if nc0 < -eps else nc0
+                absnc = abs(nc0)
+                nc0 = 1 if absnc < eps and Y < 0 else nc0
+                <{RealType}> nc1 = theta / (2 * pi)
+                nc1 = nc1 + 1 if nc1 < -eps else nc1
+                absnc = abs(nc1)
+                nc1 = 1 if absnc < eps and Z < 0 else nc1
+                new_coords[j, 0] = nc0 * Lx[0]
+                new_coords[j, 1] = nc1 * Ly[0]
+            end
+            """
+
+        cLx = Constant(self.Lx)
+        cLy = Constant(self.Ly)
+
+        par_loop((domain, instructions), dx,
+                 {"new_coords": (new_coordinates, WRITE),
+                  "old_coords": (old_coordinates, READ),
+                  "Lx": (cLx, READ),
+                  "Ly": (cLy, READ)},
+                 is_loopy_kernel=True)
+
+        self.mesh = mesh.Mesh(new_coordinates)
+
+    def GetMesh(self):
+        """
+        Return mesh
+        """
+        return self.mesh
+
+
+class PeriodicSquareMesh(PeriodicRectangleMesh):
+    """
+    Generate a periodic square mesh
+    """
+    def __init__(self, nx, ny, L, direction="both", quadrilateral=False, reorder=None,
+                 distribution_parameters=None, diagonal=None, comm=COMM_WORLD):
+        """
+        :arg nx: The number of cells in the x direction
+        :arg ny: The number of cells in the y direction
+        :arg L: The extent in the x and y directions
+        :arg direction: The direction of the periodicity, one of
+            ``"both"``, ``"x"`` or ``"y"``.
+        :kwarg quadrilateral: (optional), creates quadrilateral mesh, defaults to False
+        :kwarg reorder: (optional), should the mesh be reordered
+        :kwarg diagonal: (optional), one of ``"crossed"``, ``"left"``, ``"right"``. ``"left"`` is the default.
+            Not valid for quad meshes.
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+
+        If direction == "x" the boundary edges in this mesh are numbered as follows:
+
+        * 1: plane y == 0
+        * 2: plane y == L
+
+        If direction == "y" the boundary edges are:
+
+        * 1: plane x == 0
+        * 2: plane x == L
+        """
+        super().__init__(nx, ny, L, L, direction=direction, quadrilateral=quadrilateral,
+                         reorder=reorder, distribution_parameters=distribution_parameters,
+                         diagonal=diagonal, comm=comm)
+
+
+class PeriodicUnitSquareMesh(PeriodicSquareMesh):
+    """
+    Generate a periodic unit square mesh
+    """
+    def __init__(self, nx, ny, direction="both", reorder=None, quadrilateral=False,
+                 distribution_parameters=None, diagonal=None, comm=COMM_WORLD):
+        """
+        :arg nx: The number of cells in the x direction
+        :arg ny: The number of cells in the y direction
+        :arg direction: The direction of the periodicity, one of
+            ``"both"``, ``"x"`` or ``"y"``.
+        :kwarg quadrilateral: (optional), creates quadrilateral mesh, defaults to False
+        :kwarg reorder: (optional), should the mesh be reordered
+        :kwarg diagonal: (optional), one of ``"crossed"``, ``"left"``, ``"right"``. ``"left"`` is the default.
+            Not valid for quad meshes.
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+
+        If direction == "x" the boundary edges in this mesh are numbered as follows:
+
+        * 1: plane y == 0
+        * 2: plane y == 1
+
+        If direction == "y" the boundary edges are:
+
+        * 1: plane x == 0
+        * 2: plane x == 1
+        """
+        super().__init__(nx, ny, 1.0, direction=direction, reorder=reorder,
+                         quadrilateral=quadrilateral,
+                         distribution_parameters=distribution_parameters,
+                         diagonal=diagonal, comm=comm)
+
+
+class CircleManifoldMesh(AbstractMesh):
+    """
+    Generated a 1D mesh of the circle, immersed in 2D.
+    """
+    def __init__(self, ncells, radius=1, distribution_parameters=None, comm=COMM_WORLD):
+        """
+        :arg ncells: number of cells the circle should be
+         divided into (min 3)
+        :kwarg radius: (optional) radius of the circle to approximate
+               (defaults to 1).
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+        """
+        if ncells < 3:
+            raise ValueError("CircleManifoldMesh must have at least three cells")
+        self.ncells = ncells
+        self.radius = radius
+        self.distribution_parameters = distribution_parameters
+        self.comm = comm
+        self.mesh = None
+        self.BuildMesh()
+
+    def BuildMesh(self):
+        """
+        Build mesh
+        """
+        vertices = self.radius * np.column_stack((np.cos(np.arange(self.ncells, dtype=np.double) * (2 * np.pi / self.ncells)),
+                                                  np.sin(np.arange(self.ncells, dtype=np.double) * (2 * np.pi / self.ncells))))
+
+        cells = np.column_stack((np.arange(0, self.ncells, dtype=np.int32),
+                                 np.roll(np.arange(0, self.ncells, dtype=np.int32), -1)))
+
+        plex = mesh._from_cell_list(1, cells, vertices, self.comm)
+        m = mesh.Mesh(plex, dim=2, reorder=False, distribution_parameters=self.distribution_parameters)
+        m._radius = self.radius
+
+        self.mesh = m
+
+    def GetMesh(self):
+        """
+        Return mesh
+        """
+        return self.mesh
+
+
+class UnitDiskMesh(AbstractMesh):
+    """
+    Generate a mesh of the unit disk in 2D
+    """
+    def __init__(self, refinement_level=0, reorder=None, distribution_parameters=None, comm=COMM_WORLD):
+        """
+        :kwarg refinement_level: optional number of refinements (0 is a diamond)
+        :kwarg reorder: (optional), should the mesh be reordered?
+        :kwarg comm: Optional communicator to build the mesh on (defaults to COMM_WORLD).
+        """
+        self.refinement_level = refinement_level
+        self.reorder = reorder
+        self.distribution_parameters = distribution_parameters
+        self.comm = comm
+        self.mesh = None
+        self.BuildMesh()
+
+    def BuildMesh(self):
+        """
+        Build mesh
+        """
+        vertices = np.array([[0, 0],
+                             [1, 0],
+                             [1, 1],
+                             [0, 1],
+                             [-1, 1],
+                             [-1, 0],
+                             [-1, -1],
+                             [0, -1],
+                             [1, -1]], dtype=np.double)
+
+        cells = np.array([[0, 1, 2],
+                          [0, 2, 3],
+                          [0, 3, 4],
+                          [0, 4, 5],
+                          [0, 5, 6],
+                          [0, 6, 7],
+                          [0, 7, 8],
+                          [0, 8, 1]], np.int32)
+
+        plex = mesh._from_cell_list(2, cells, vertices, self.comm)
+
+        # mark boundary facets
+        plex.createLabel(dmcommon.FACE_SETS_LABEL)
+        plex.markBoundaryFaces("boundary_faces")
+        if plex.getStratumSize("boundary_faces", 1) > 0:
+            boundary_faces = plex.getStratumIS("boundary_faces", 1).getIndices()
+            for face in boundary_faces:
+                plex.setLabelValue(dmcommon.FACE_SETS_LABEL, face, 1)
+
+        plex.setRefinementUniform(True)
+        for i in range(self.refinement_level):
+            plex = plex.refine()
+
+        coords = plex.getCoordinatesLocal().array.reshape(-1, 2)
+        for x in coords:
+            norm = np.sqrt(np.dot(x, x))
+            if norm > 1. / (1 << (self.refinement_level + 1)):
+                t = np.max(np.abs(x)) / norm
+                x[:] *= t
+
+        self.mesh = mesh.Mesh(plex, dim=2, reorder=self.reorder, distribution_parameters=self.distribution_parameters)
+
+    def GetMesh(self):
+        """
+        Return mesh
+        """
+        return self.mesh
+
+
+class UnitTetahedronMesh(AbstractMesh):
+    """
+    Generate a mesh of the reference tetrahedron.
+    """
+    def __init__(self, comm=COMM_WORLD):
+        """
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+        COMM_WORLD).
+        """
+        self.comm = comm
+        self.mesh = None
+        self.BuildMesh()
+
+    def BuildMesh(self):
+        """
+        Build mesh
+        """
+        coords = [[0., 0., 0.], [1., 0., 0.], [0., 1., 0.], [0., 0., 1.]]
+        cells = [[0, 1, 2, 3]]
+        plex = mesh._from_cell_list(3, cells, coords, self.comm)
+
+        self.mesh = mesh.Mesh(plex, reorder=False)
+
+    def GetMesh(self):
+        """
+        Return mesh
+        """
+        return self.mesh
+
+
+class BoxMesh(AbstractMesh):
+    """
+    Generate a mesh of a 3D box.
+    """
+    def __init__(self, nx, ny, nz, Lx, Ly, Lz, reorder=None, distribution_parameters=None,
+                 diagonal="default", comm=COMM_WORLD):
+        """
+        :arg nx: The number of cells in the x direction
+        :arg ny: The number of cells in the y direction
+        :arg nz: The number of cells in the z direction
+        :arg Lx: The extent in the x direction
+        :arg Ly: The extent in the y direction
+        :arg Lz: The extent in the z direction
+        :arg diagonal: Two ways of cutting hexadra, should be cut into 6
+            tetrahedra (``"default"``), or 5 tetrahedra thus less biased
+            (``"crossed"``)
+        :kwarg reorder: (optional), should the mesh be reordered?
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+
+        The boundary surfaces are numbered as follows:
+
+        * 1: plane x == 0
+        * 2: plane x == Lx
+        * 3: plane y == 0
+        * 4: plane y == Ly
+        * 5: plane z == 0
+        * 6: plane z == Lz
+        """
+        for n in (nx, ny, nz):
+            if n <= 0 or n % 1:
+                raise ValueError("Number of cells must be a postive integer")
+        self.nx = nx
+        self.ny = ny
+        self.nz = nz
+        self.Lx = Lx
+        self.Ly = Ly
+        self.Lz = Lz
+        self.reorder = reorder
+        self.diagonal = diagonal
+        self.distribution_parameters = distribution_parameters
+        self.comm = comm
+        self.mesh = None
+        self.BuildMesh()
+
+    def BuildMesh(self):
+        """
+        Build mesh
+        """
+        xcoords = np.linspace(0, self.Lx, self.nx + 1, dtype=np.double)
+        ycoords = np.linspace(0, self.Ly, self.ny + 1, dtype=np.double)
+        zcoords = np.linspace(0, self.Lz, self.nz + 1, dtype=np.double)
+        # X moves fastest, then Y, then Z
+        coords = np.asarray(np.meshgrid(xcoords, ycoords, zcoords)).swapaxes(0, 3).reshape(-1, 3)
+        i, j, k = np.meshgrid(np.arange(self.nx, dtype=np.int32),
+                              np.arange(self.ny, dtype=np.int32),
+                              np.arange(self.nz, dtype=np.int32))
+        if self.diagonal == "default":
+            v0 = k * (self.nx + 1) * (self.ny + 1) + j * (self.nx + 1) + i
+            v1 = v0 + 1
+            v2 = v0 + (self.nx + 1)
+            v3 = v1 + (self.nx + 1)
+            v4 = v0 + (self.nx + 1) * (self.ny + 1)
+            v5 = v1 + (self.nx + 1) * (self.ny + 1)
+            v6 = v2 + (self.nx + 1) * (self.ny + 1)
+            v7 = v3 + (self.nx + 1) * (self.ny + 1)
+
+            cells = [v0, v1, v3, v7,
+                     v0, v1, v7, v5,
+                     v0, v5, v7, v4,
+                     v0, v3, v2, v7,
+                     v0, v6, v4, v7,
+                     v0, v2, v6, v7]
+            cells = np.asarray(cells).swapaxes(0, 3).reshape(-1, 4)
+        elif self.diagonal == "crossed":
+            v0 = k * (self.nx + 1) * (self.ny + 1) + j * (self.nx + 1) + i
+            v1 = v0 + 1
+            v2 = v0 + (self.nx + 1)
+            v3 = v1 + (self.nx + 1)
+            v4 = v0 + (self.nx + 1) * (self.ny + 1)
+            v5 = v1 + (self.nx + 1) * (self.ny + 1)
+            v6 = v2 + (self.nx + 1) * (self.ny + 1)
+            v7 = v3 + (self.nx + 1) * (self.ny + 1)
+
+            # There are onself.Ly five tetrahedra in this cutting of hexahedra
+            cells = [v0, v1, v2, v4,
+                     v1, v7, v5, v4,
+                     v1, v2, v3, v7,
+                     v2, v4, v6, v7,
+                     v1, v2, v7, v4]
+            cells = np.asarray(cells).swapaxes(0, 3).reshape(-1, 4)
+            raise NotImplementedError(
+                "The crossed cutting of hexahedra has a broken connectivity issue for Pk (k>1) elements")
+        else:
+            raise ValueError("Unrecognised value for self.diagonal '%r'", self.diagonal)
+
+        plex = mesh._from_cell_list(3, cells, coords, self.comm)
+
+        # Appself.Ly boundary IDs
+        plex.createLabel(dmcommon.FACE_SETS_LABEL)
+        plex.markBoundaryFaces("boundary_faces")
+        coords = plex.getCoordinates()
+        coord_sec = plex.getCoordinateSection()
+        if plex.getStratumSize("boundary_faces", 1) > 0:
+            boundary_faces = plex.getStratumIS("boundary_faces", 1).getIndices()
+            xtol = self.Lx / (2 * self.nx)
+            ytol = self.Ly / (2 * self.ny)
+            ztol = self.Lz / (2 * self.nz)
+            for face in boundary_faces:
+                face_coords = plex.vecGetClosure(coord_sec, coords, face)
+                if abs(face_coords[0]) < xtol and abs(face_coords[3]) < xtol and abs(face_coords[6]) < xtol:
+                    plex.setLabelValue(dmcommon.FACE_SETS_LABEL, face, 1)
+                if abs(face_coords[0] - self.Lx) < xtol and abs(face_coords[3] - self.Lx) < xtol and abs(
+                        face_coords[6] - self.Lx) < xtol:
+                    plex.setLabelValue(dmcommon.FACE_SETS_LABEL, face, 2)
+                if abs(face_coords[1]) < ytol and abs(face_coords[4]) < ytol and abs(face_coords[7]) < ytol:
+                    plex.setLabelValue(dmcommon.FACE_SETS_LABEL, face, 3)
+                if abs(face_coords[1] - self.Ly) < ytol and abs(face_coords[4] - self.Ly) < ytol and abs(
+                        face_coords[7] - self.Ly) < ytol:
+                    plex.setLabelValue(dmcommon.FACE_SETS_LABEL, face, 4)
+                if abs(face_coords[2]) < ztol and abs(face_coords[5]) < ztol and abs(face_coords[8]) < ztol:
+                    plex.setLabelValue(dmcommon.FACE_SETS_LABEL, face, 5)
+                if abs(face_coords[2] - self.Lz) < ztol and abs(face_coords[5] - self.Lz) < ztol and abs(
+                        face_coords[8] - self.Lz) < ztol:
+                    plex.setLabelValue(dmcommon.FACE_SETS_LABEL, face, 6)
+
+        self.mesh = mesh.Mesh(plex, reorder=self.reorder, distribution_parameters=self.distribution_parameters)
+
+    def GetMesh(self):
+        """
+        Return mesh
+        """
+        return self.mesh
+
+
+class CubeMesh(BoxMesh):
+    """
+    Generate a mesh of a cube
+    """
+    def __init__(self, nx, ny, nz, L, reorder=None, distribution_parameters=None, comm=COMM_WORLD):
+        """
+        :arg nx: The number of cells in the x direction
+        :arg ny: The number of cells in the y direction
+        :arg nz: The number of cells in the z direction
+        :arg L: The extent in the x, y and z directions
+        :kwarg reorder: (optional), should the mesh be reordered?
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+
+        The boundary surfaces are numbered as follows:
+
+        * 1: plane x == 0
+        * 2: plane x == L
+        * 3: plane y == 0
+        * 4: plane y == L
+        * 5: plane z == 0
+        * 6: plane z == L
+        """
+        super().__init__(nx, ny, nz, L, L, L, reorder=reorder, distribution_parameters=distribution_parameters,
+                         comm=comm)
+
+
+class UnitCubeMesh(CubeMesh):
+    """
+    Generate a mesh of a unit cube
+    """
+    def __init(self, nx, ny, nz, reorder=None, distribution_parameters=None, comm=COMM_WORLD):
+        """
+        :arg nx: The number of cells in the x direction
+        :arg ny: The number of cells in the y direction
+        :arg nz: The number of cells in the z direction
+        :kwarg reorder: (optional), should the mesh be reordered?
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+    
+        The boundary surfaces are numbered as follows:
+    
+        * 1: plane x == 0
+        * 2: plane x == 1
+        * 3: plane y == 0
+        * 4: plane y == 1
+        * 5: plane z == 0
+        * 6: plane z == 1
+        """
+        super().__init__(nx, ny, nz, 1, reorder=reorder, distribution_parameters=distribution_parameters,
+                         comm=comm)
+        
+        
+class PeriodicBoxMesh(AbstractMesh):
+    """
+    Generate a periodic mesh of a 3D box.
+    """
+    def __init__(self, nx, ny, nz, Lx, Ly, Lz, reorder=None, distribution_parameters=None, comm=COMM_WORLD):
+        """
+        :arg nx: The number of cells in the x direction
+        :arg ny: The number of cells in the y direction
+        :arg nz: The number of cells in the z direction
+        :arg Lx: The extent in the x direction
+        :arg Ly: The extent in the y direction
+        :arg Lz: The extent in the z direction
+        :kwarg reorder: (optional), should the mesh be reordered?
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+        """
+        for n in (nx, ny, nz):
+            if n < 3:
+                raise ValueError("3D periodic meshes with fewer than 3 cells are not currently supported")
+        self.nx = nx
+        self.ny = ny
+        self.nz = nz
+        self.Lx = Lx
+        self.Ly = Ly
+        self.Lz = Lz
+        self.reorder = reorder
+        self.distribution_parameters = distribution_parameters
+        self.comm = comm
+        self.mesh = None
+        self.BuildMesh()
+        
+    def BuildMesh(self):
+        """
+        Build mesh
+        """
+        xcoords = np.arange(0., self.Lx, self.Lx / self.nx, dtype=np.double)
+        ycoords = np.arange(0., self.Ly, self.Ly / self.ny, dtype=np.double)
+        zcoords = np.arange(0., self.Lz, self.Lz / self.nz, dtype=np.double)
+        coords = np.asarray(np.meshgrid(xcoords, ycoords, zcoords)).swapaxes(0, 3).reshape(-1, 3)
+        i, j, k = np.meshgrid(np.arange(self.nx, dtype=np.int32),
+                              np.arange(self.ny, dtype=np.int32),
+                              np.arange(self.nz, dtype=np.int32))
+        v0 = k * self.nx * self.ny + j * self.nx + i
+        v1 = k * self.nx * self.ny + j * self.nx + (i + 1) % self.nx
+        v2 = k * self.nx * self.ny + ((j + 1) % self.ny) * self.nx + i
+        v3 = k * self.nx * self.ny + ((j + 1) % self.ny) * self.nx + (i + 1) % self.nx
+        v4 = ((k + 1) % self.nz) * self.nx * self.ny + j * self.nx + i
+        v5 = ((k + 1) % self.nz) * self.nx * self.ny + j * self.nx + (i + 1) % self.nx
+        v6 = ((k + 1) % self.nz) * self.nx * self.ny + ((j + 1) % self.ny) * self.nx + i
+        v7 = ((k + 1) % self.nz) * self.nx * self.ny + ((j + 1) % self.ny) * self.nx + (i + 1) % self.nx
+
+        cells = [v0, v1, v3, v7,
+                 v0, v1, v7, v5,
+                 v0, v5, v7, v4,
+                 v0, v3, v2, v7,
+                 v0, v6, v4, v7,
+                 v0, v2, v6, v7]
+        cells = np.asarray(cells).swapaxes(0, 3).reshape(-1, 4)
+        plex = mesh._from_cell_list(3, cells, coords, self.comm)
+        m = mesh.Mesh(plex, reorder=self.reorder, distribution_parameters=self.distribution_parameters)
+
+        old_coordinates = m.coordinates
+        new_coordinates = Function(VectorFunctionSpace(m, FiniteElement('DG', tetrahedron, 1, variant="equispaced")))
+
+        domain = ""
+        instructions = f"""
+        <{RealType}> x0 = real(old_coords[0, 0])
+        <{RealType}> x1 = real(old_coords[1, 0])
+        <{RealType}> x2 = real(old_coords[2, 0])
+        <{RealType}> x3 = real(old_coords[3, 0])
+        <{RealType}> x_max = fmax(fmax(fmax(x0, x1), x2), x3)
+        <{RealType}> y0 = real(old_coords[0, 1])
+        <{RealType}> y1 = real(old_coords[1, 1])
+        <{RealType}> y2 = real(old_coords[2, 1])
+        <{RealType}> y3 = real(old_coords[3, 1])
+        <{RealType}> y_max = fmax(fmax(fmax(y0, y1), y2), y3)
+        <{RealType}> z0 = real(old_coords[0, 2])
+        <{RealType}> z1 = real(old_coords[1, 2])
+        <{RealType}> z2 = real(old_coords[2, 2])
+        <{RealType}> z3 = real(old_coords[3, 2])
+        <{RealType}> z_max = fmax(fmax(fmax(z0, z1), z2), z3)
+
+        new_coords[0, 0] = x_max+hx[0]  if (x_max > real(1.5*hx[0]) and old_coords[0, 0] == 0.) else old_coords[0, 0]
+        new_coords[0, 1] = y_max+hy[0]  if (y_max > real(1.5*hy[0]) and old_coords[0, 1] == 0.) else old_coords[0, 1]
+        new_coords[0, 2] = z_max+hz[0]  if (z_max > real(1.5*hz[0]) and old_coords[0, 2] == 0.) else old_coords[0, 2]
+
+        new_coords[1, 0] = x_max+hx[0]  if (x_max > real(1.5*hx[0]) and old_coords[1, 0] == 0.) else old_coords[1, 0]
+        new_coords[1, 1] = y_max+hy[0]  if (y_max > real(1.5*hy[0]) and old_coords[1, 1] == 0.) else old_coords[1, 1]
+        new_coords[1, 2] = z_max+hz[0]  if (z_max > real(1.5*hz[0]) and old_coords[1, 2] == 0.) else old_coords[1, 2]
+
+        new_coords[2, 0] = x_max+hx[0]  if (x_max > real(1.5*hx[0]) and old_coords[2, 0] == 0.) else old_coords[2, 0]
+        new_coords[2, 1] = y_max+hy[0]  if (y_max > real(1.5*hy[0]) and old_coords[2, 1] == 0.) else old_coords[2, 1]
+        new_coords[2, 2] = z_max+hz[0]  if (z_max > real(1.5*hz[0]) and old_coords[2, 2] == 0.) else old_coords[2, 2]
+
+        new_coords[3, 0] = x_max+hx[0]  if (x_max > real(1.5*hx[0]) and old_coords[3, 0] == 0.) else old_coords[3, 0]
+        new_coords[3, 1] = y_max+hy[0]  if (y_max > real(1.5*hy[0]) and old_coords[3, 1] == 0.) else old_coords[3, 1]
+        new_coords[3, 2] = z_max+hz[0]  if (z_max > real(1.5*hz[0]) and old_coords[3, 2] == 0.) else old_coords[3, 2]
+        """
+        hx = Constant(self.Lx / self.nx)
+        hy = Constant(self.Ly / self.ny)
+        hz = Constant(self.Lz / self.nz)
+
+        par_loop((domain, instructions), dx,
+                 {"new_coords": (new_coordinates, WRITE),
+                  "old_coords": (old_coordinates, READ),
+                  "hx": (hx, READ),
+                  "hy": (hy, READ),
+                  "hz": (hz, READ)},
+                  is_loopy_kernel=True)
+        self.mesh = mesh.Mesh(new_coordinates)
+
+    def GetMesh(self):
+        """
+        Return mesh
+        """
+        return self.mesh
+
+
+class PeriodicUnitCubeMesh(PeriodicBoxMesh):
+    """
+    Generate a periodic mesh of a unit cube
+    """
+    def __init__(self, nx, ny, nz, reorder=None, distribution_parameters=None, comm=COMM_WORLD):
+        """
+        :arg nx: The number of cells in the x direction
+        :arg ny: The number of cells in the y direction
+        :arg nz: The number of cells in the z direction
+        :kwarg reorder: (optional), should the mesh be reordered?
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+        """
+        super().__init__(nx, ny, nz, 1., 1., 1., reorder=reorder, distribution_parameters=distribution_parameters,
+                         comm=comm)
+
+
+class IcosahedralSphereMesh(AbstractMesh):
+    """
+    Generate an icosahedral approximation to the surface of the sphere.
+    """
+    def __init__(self, radius, refinement_level=0, degree=1, reorder=None,
+                 distribution_parameters=None, comm=COMM_WORLD):
+        """
+        :arg radius: The radius of the sphere to approximate.
+         For a radius R the edge length of the underlying
+         icosahedron will be.
+
+         .. math::
+
+             a = \\frac{R}{\\sin(2 \\pi / 5)}
+
+        :kwarg refinement_level: optional number of refinements (0 is an
+            icosahedron).
+        :kwarg degree: polynomial degree of coordinate space (defaults
+            to 1: flat triangles)
+        :kwarg reorder: (optional), should the mesh be reordered?
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+        """
+        if refinement_level < 0 or refinement_level % 1:
+            raise RuntimeError("Number of refinements must be a non-negative integer")
+
+        if degree < 1:
+            raise ValueError("Mesh coordinate degree must be at least 1")
+        self.radius = radius
+        self.refinement_level = refinement_level
+        self.degree = degree
+        self.reorder = reorder
+        self.distribution_parameters = distribution_parameters
+        self.comm = comm
+        self.mesh = None
+        self.BuildMesh()
+
+    def BuildMesh(self):
+        """
+        :arg radius: The radius of the sphere to approximate.
+         For a radius R the edge length of the underlying
+         icosahedron will be.
+
+         .. math::
+
+             a = \\frac{R}{\\sin(2 \\pi / 5)}
+
+        :kwarg refinement_level: optional number of refinements (0 is an
+            icosahedron).
+        :kwarg degree: polynomial degree of coordinate space (defaults
+            to 1: flat triangles)
+        :kwarg reorder: (optional), should the mesh be reordered?
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+        """
+        from math import sqrt
+        phi = (1 + sqrt(5)) / 2
+        # vertices of an icosahedron with an edge length of 2
+        vertices = np.array([[-1, phi, 0],
+                             [1, phi, 0],
+                             [-1, -phi, 0],
+                             [1, -phi, 0],
+                             [0, -1, phi],
+                             [0, 1, phi],
+                             [0, -1, -phi],
+                             [0, 1, -phi],
+                             [phi, 0, -1],
+                             [phi, 0, 1],
+                             [-phi, 0, -1],
+                             [-phi, 0, 1]],
+                            dtype=np.double)
+        # faces of the base icosahedron
+        faces = np.array([[0, 11, 5],
+                          [0, 5, 1],
+                          [0, 1, 7],
+                          [0, 7, 10],
+                          [0, 10, 11],
+                          [1, 5, 9],
+                          [5, 11, 4],
+                          [11, 10, 2],
+                          [10, 7, 6],
+                          [7, 1, 8],
+                          [3, 9, 4],
+                          [3, 4, 2],
+                          [3, 2, 6],
+                          [3, 6, 8],
+                          [3, 8, 9],
+                          [4, 9, 5],
+                          [2, 4, 11],
+                          [6, 2, 10],
+                          [8, 6, 7],
+                          [9, 8, 1]], dtype=np.int32)
+
+        plex = mesh._from_cell_list(2, faces, vertices, self.comm)
+        plex.setRefinementUniform(True)
+        for i in range(self.refinement_level):
+            plex = plex.refine()
+
+        coords = plex.getCoordinatesLocal().array.reshape(-1, 3)
+        scale = (self.radius / np.linalg.norm(coords, axis=1)).reshape(-1, 1)
+        coords *= scale
+        m = mesh.Mesh(plex, dim=3, reorder=self.reorder, distribution_parameters=self.distribution_parameters)
+        if self.degree > 1:
+            new_coords = function.Function(functionspace.VectorFunctionSpace(m, "CG", self.degree))
+            new_coords.interpolate(ufl.SpatialCoordinate(m))
+            # "push out" to sphere
+            new_coords.dat.data[:] *= (self.radius / np.linalg.norm(new_coords.dat.data, axis=1)).reshape(-1, 1)
+            m = mesh.Mesh(new_coords)
+        m._radius = self.radius
+
+        self.mesh = m
+
+    def GetMesh(self):
+        """
+        Returns mesh
+        """
+        return self.mesh
+
+
+class UnitIcosahedralSphereMesh(IcosahedralSphereMesh):
+    """
+    Generate an icosahedral approximation to the unit sphere.
+    """
+    def __init__(self, refinement_level=0, degree=1, reorder=None,
+                 distribution_parameters=None, comm=COMM_WORLD):
+        """
+        :kwarg refinement_level: optional number of refinements (0 is an
+        icosahedron).
+        :kwarg degree: polynomial degree of coordinate space (defaults
+            to 1: flat triangles)
+        :kwarg reorder: (optional), should the mesh be reordered?
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+        """
+        super().__init__(1.0, refinement_level=refinement_level,
+                         degree=degree, reorder=reorder, comm=comm)
+
+
+# mesh is mainly used as a utility, so it's unnecessary to annotate the construction
+# in this case.
+class OctahedralSphereMesh(AbstractMesh):
+    """
+    Generate an octahedral approximation to the surface of the
+    sphere.
+    """
+    def __init__(self, radius, refinement_level=0, degree=1, hemisphere="both",
+                 z0=0.8, reorder=None, distribution_parameters=None, comm=COMM_WORLD):
+        """
+        :arg radius: The radius of the sphere to approximate.
+        :kwarg refinement_level: optional number of refinements (0 is an
+            octahedron).
+        :kwarg degree: polynomial degree of coordinate space (defaults
+            to 1: flat triangles)
+        :kwarg hemisphere: One of "both" (default), "north", or "south"
+        :kwarg z0: for abs(z/R)>z0, blend from a mesh where the higher-order
+            non-vertex nodes are on lines of latitude to a mesh where these nodes
+            are just pushed out radially from the equivalent P1 mesh. (defaults to
+            z0=0.8).
+        :kwarg reorder: (optional), should the mesh be reordered?
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+        """
+        if refinement_level < 0 or refinement_level % 1:
+            raise ValueError("Number of refinements must be a non-negative integer")
+        if degree < 1:
+            raise ValueError("Mesh coordinate degree must be at least 1")
+        if hemisphere not in {"both", "north", "south"}:
+            raise ValueError("Unhandled hemisphere '%s'" % hemisphere)
+
+        self.radius = radius
+        self.refinement_level = refinement_level
+        self.degree = degree
+        self.hemisphere = hemisphere
+        self.z0 = z0
+        self.reorder = reorder
+        self.distribution_parameters = distribution_parameters
+        self.comm = comm
+        self.mesh = None
+        self.BuildMesh()
+
+    def BuildMesh(self):
+        """
+        Build mesh
+        """
+        # vertices of an octahedron of radius 1
+        vertices = np.array([[1.0, 0.0, 0.0],
+                             [0.0, 1.0, 0.0],
+                             [0.0, 0.0, 1.0],
+                             [-1.0, 0.0, 0.0],
+                             [0.0, -1.0, 0.0],
+                             [0.0, 0.0, -1.0]])
+        faces = np.array([[0, 1, 2],
+                          [0, 1, 5],
+                          [0, 2, 4],
+                          [0, 4, 5],
+                          [1, 2, 3],
+                          [1, 3, 5],
+                          [2, 3, 4],
+                          [3, 4, 5]], dtype=IntType)
+        if self.hemisphere == "north":
+            vertices = vertices[[0, 1, 2, 3, 4], ...]
+            faces = faces[0::2, ...]
+        elif self.hemisphere == "south":
+            indices = [0, 1, 3, 4, 5]
+            vertices = vertices[indices, ...]
+            faces = faces[1::2, ...]
+            for new, idx in enumerate(indices):
+                faces[faces == idx] = new
+
+        plex = mesh._from_cell_list(2, faces, vertices, self.comm)
+        plex.setRefinementUniform(True)
+        for i in range(self.refinement_level):
+            plex = plex.refine()
+
+        # build the initial mesh
+        m = mesh.Mesh(plex, dim=3, reorder=self.reorder, distribution_parameters=self.distribution_parameters)
+        if self.degree > 1:
+            # use it to build a higher-order mesh
+            m = mesh.Mesh(interpolate(ufl.SpatialCoordinate(m), VectorFunctionSpace(m, "CG", self.degree)))
+
+        # remap to a cone
+        x, y, z = ufl.SpatialCoordinate(m)
+        # This will DTWT on meshes with more than 26 refinement levels.
+        # (log_2 1e8 ~= 26.5)
+        tol = ufl.real(Constant(1.0e-8))
+        rnew = ufl.Max(1 - abs(z), 0)
+        # Avoid division by zero (when rnew is zero, x & y are also zero)
+        x0 = ufl.conditional(ufl.lt(ufl.real(rnew), tol),
+                             0, x / rnew)
+        y0 = ufl.conditional(ufl.lt(rnew, tol),
+                             0, y / rnew)
+        theta = ufl.conditional(ufl.ge(ufl.real(y0), 0),
+                                ufl.pi / 2 * (1 - x0),
+                                ufl.pi / 2.0 * (x0 - 1))
+        m.coordinates.interpolate(ufl.as_vector([ufl.cos(theta) * rnew,
+                                                 ufl.sin(theta) * rnew, z]))
+
+        # push out to a sphere
+        phi = ufl.pi * z / 2
+        # Avoid division by zero (when rnew is zero, phi is pi/2, so cos(phi) is zero).
+        scale = ufl.conditional(ufl.lt(ufl.real(rnew), ufl.real(tol)),
+                                0, ufl.cos(phi) / rnew)
+        znew = ufl.sin(phi)
+        # Make a copy of the coordinates so that we can blend two different
+        # mappings near the pole
+        Vc = m.coordinates.function_space()
+        Xlatitudinal = interpolate(Constant(self.radius) * ufl.as_vector([x * scale,
+                                                                          y * scale,
+                                                                          znew]), Vc)
+        Vlow = VectorFunctionSpace(m, "CG", 1)
+        Xlow = interpolate(Xlatitudinal, Vlow)
+        r = ufl.sqrt(Xlow[0] ** 2 + Xlow[1] ** 2 + Xlow[2] ** 2)
+        Xradial = Constant(self.radius) * Xlow / r
+
+        s = ufl.real(abs(z) - self.z0) / (1 - self.z0)
+        exp = ufl.exp
+        taper = ufl.conditional(ufl.gt(s, 1.0 - tol),
+                                1.0,
+                                ufl.conditional(ufl.gt(s, tol),
+                                                exp(-1.0 / s) / (exp(-1.0 / s) + exp(-1.0 / (1.0 - s))),
+                                                0.))
+        m.coordinates.interpolate(taper * Xradial + (1 - taper) * Xlatitudinal)
+        m._radius = self.radius
+
+        self.mesh = m
+
+    def GetMesh(self):
+        """
+        Return mesh
+        """
+        return self.mesh
+
+
+class UnitOctahedralSphereMesh(OctahedralSphereMesh):
+    """
+    Generate an octahedral approximation to the unit sphere.
+    """
+    def __init__(self, refinement_level=0, degree=1, hemisphere="both", z0=0.8, reorder=None,
+                 distribution_parameters=None, comm=COMM_WORLD):
+        """
+        :kwarg refinement_level: optional number of refinements (0 is an
+        octahedron).
+        :kwarg degree: polynomial degree of coordinate space (defaults
+            to 1: flat triangles)
+        :kwarg hemisphere: One of "both" (default), "north", or "south"
+        :kwarg z0: for abs(z)>z0, blend from a mesh where the higher-order
+            non-vertex nodes are on lines of latitude to a mesh where these nodes
+            are just pushed out radially from the equivalent P1 mesh. (defaults to
+            z0=0.8).
+        :kwarg reorder: (optional), should the mesh be reordered?
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+        """
+        super().__init__(1.0, refinement_level=refinement_level, degree=degree, hemisphere=hemisphere,
+                         z0=z0, reorder=reorder, distribution_parameters=distribution_parameters,
+                         comm=comm)
+
+
+class CubedSphereMesh(AbstractMesh):
+    """
+    Generate an cubed approximation to the surface of the sphere.
+    """
+    def __init__(self, radius, refinement_level=0, degree=1, reorder=None, 
+                 distribution_parameters=None, comm=COMM_WORLD):
+        """
+        :arg radius: The radius of the sphere to approximate.
+        :kwarg refinement_level: optional number of refinements (0 is a cube).
+        :kwarg degree: polynomial degree of coordinate space (defaults
+            to 1: bilinear quads)
+        :kwarg reorder: (optional), should the mesh be reordered?
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+        """
+        if refinement_level < 0 or refinement_level % 1:
+            raise RuntimeError("Number of refinements must be a non-negative integer")
+
+        if degree < 1:
+            raise ValueError("Mesh coordinate degree must be at least 1")
+        
+        self.radius = radius
+        self.refinement_level = refinement_level
+        self.degree = degree
+        self.reorder = reorder
+        self.distribution_parameters = distribution_parameters
+        self.comm = comm
+        self.mesh = None
+        self.BuildMesh()
+
+    def BuildMesh(self):
+        """
+        Build mesh
+        """
+        cells, coords = self._cubedsphere_cells_and_coords()
+        plex = mesh._from_cell_list(2, cells, coords, self.comm)
+
+        m = mesh.Mesh(plex, dim=3, reorder=self.reorder, distribution_parameters=self.distribution_parameters)
+
+        if self.degree > 1:
+            new_coords = function.Function(functionspace.VectorFunctionSpace(m, "Q", self.degree))
+            new_coords.interpolate(ufl.SpatialCoordinate(m))
+            # "push out" to sphere
+            new_coords.dat.data[:] *= (self.radius / np.linalg.norm(new_coords.dat.data, axis=1)).reshape(-1, 1)
+            m = mesh.Mesh(new_coords)
+        m._radius = self.radius
+
+        self.mesh = m
+    
+    def GetMesh(self):
+        """
+        Return mesh
+        """
+        return self.mesh
+    
+    def _cubedsphere_cells_and_coords(self):
+        """
+        Generate vertex and face lists for cubed sphere
+        """
+        # We build the mesh out of 6 panels of the cube
+        # this allows to build the gnonomic cube transformation
+        # which is defined separately for each panel
+    
+        # Start by making a grid of local coordinates which we use
+        # to map to each panel of the cubed sphere under the gnonomic
+        # transformation
+        dtheta = 2**(-self.refinement_level+1)*np.arctan(1.0)
+        a = 3.0**(-0.5)*self.radius
+        theta = np.arange(np.arctan(-1.0), np.arctan(1.0)+dtheta, dtheta, dtype=np.double)
+        x = a*np.tan(theta)
+        Nx = x.size
+    
+        # Compute panel numberings for each panel
+        # We use the following "flatpack" arrangement of panels
+        #   3
+        #  102
+        #   4
+        #   5
+    
+        # 0 is the bottom of the cube, 5 is the top.
+        # All panels are numbered from left to right, top to bottom
+        # according to this diagram.
+    
+        panel_numbering = np.zeros((6, Nx, Nx), dtype=np.int32)
+    
+        # Numbering for panel 0
+        panel_numbering[0, :, :] = np.arange(Nx**2, dtype=np.int32).reshape(Nx, Nx)
+        count = panel_numbering.max()+1
+    
+        # Numbering for panel 5
+        panel_numbering[5, :, :] = count + np.arange(Nx**2, dtype=np.int32).reshape(Nx, Nx)
+        count = panel_numbering.max()+1
+    
+        # Numbering for panel 4 - shares top edge with 0 and bottom edge
+        #                         with 5
+        # interior numbering
+        panel_numbering[4, 1:-1, :] = count + np.arange(Nx*(Nx-2),
+                                                        dtype=np.int32).reshape(Nx-2, Nx)
+    
+        # bottom edge
+        panel_numbering[4, 0, :] = panel_numbering[5, -1, :]
+        # top edge
+        panel_numbering[4, -1, :] = panel_numbering[0, 0, :]
+        count = panel_numbering.max()+1
+    
+        # Numbering for panel 3 - shares top edge with 5 and bottom edge
+        #                         with 0
+        # interior numbering
+        panel_numbering[3, 1:-1, :] = count + np.arange(Nx*(Nx-2),
+                                                        dtype=np.int32).reshape(Nx-2, Nx)
+        # bottom edge
+        panel_numbering[3, 0, :] = panel_numbering[0, -1, :]
+        # top edge
+        panel_numbering[3, -1, :] = panel_numbering[5, 0, :]
+        count = panel_numbering.max()+1
+    
+        # Numbering for panel 1
+        # interior numbering
+        panel_numbering[1, 1:-1, 1:-1] = count + np.arange((Nx-2)**2,
+                                                           dtype=np.int32).reshape(Nx-2, Nx-2)
+        # left edge of 1 is left edge of 5 (inverted)
+        panel_numbering[1, :, 0] = panel_numbering[5, ::-1, 0]
+        # right edge of 1 is left edge of 0
+        panel_numbering[1, :, -1] = panel_numbering[0, :, 0]
+        # top edge (excluding vertices) of 1 is left edge of 3 (downwards)
+        panel_numbering[1, -1, 1:-1] = panel_numbering[3, -2:0:-1, 0]
+        # bottom edge (excluding vertices) of 1 is left edge of 4
+        panel_numbering[1, 0, 1:-1] = panel_numbering[4, 1:-1, 0]
+        count = panel_numbering.max()+1
+    
+        # Numbering for panel 2
+        # interior numbering
+        panel_numbering[2, 1:-1, 1:-1] = count + np.arange((Nx-2)**2,
+                                                           dtype=np.int32).reshape(Nx-2, Nx-2)
+        # left edge of 2 is right edge of 0
+        panel_numbering[2, :, 0] = panel_numbering[0, :, -1]
+        # right edge of 2 is right edge of 5 (inverted)
+        panel_numbering[2, :, -1] = panel_numbering[5, ::-1, -1]
+        # bottom edge (excluding vertices) of 2 is right edge of 4 (downwards)
+        panel_numbering[2, 0, 1:-1] = panel_numbering[4, -2:0:-1, -1]
+        # top edge (excluding vertices) of 2 is right edge of 3
+        panel_numbering[2, -1, 1:-1] = panel_numbering[3, 1:-1, -1]
+        count = panel_numbering.max()+1
+    
+        # That's the numbering done.
+    
+        # Set up an array for all of the mesh coordinates
+        Npoints = panel_numbering.max()+1
+        coords = np.zeros((Npoints, 3), dtype=np.double)
+        lX, lY = np.meshgrid(x, x)
+        lX.shape = (Nx**2,)
+        lY.shape = (Nx**2,)
+        r = (a**2 + lX**2 + lY**2)**0.5
+    
+        # Now we need to compute the gnonomic transformation
+        # for each of the panels
+        panel_numbering.shape = (6, Nx**2)
+    
+        def coordinates_on_panel(panel_num, X, Y, Z):
+            I = panel_numbering[panel_num, :]
+            coords[I, 0] = self.radius / r * X
+            coords[I, 1] = self.radius / r * Y
+            coords[I, 2] = self.radius / r * Z
+    
+        coordinates_on_panel(0, lX, lY, -a)
+        coordinates_on_panel(1, -a, lY, -lX)
+        coordinates_on_panel(2, a, lY, lX)
+        coordinates_on_panel(3, lX, a, lY)
+        coordinates_on_panel(4, lX, -a, -lY)
+        coordinates_on_panel(5, lX, -lY, a)
+    
+        # Now we need to build the face numbering
+        # in local coordinates
+        vertex_numbers = np.arange(Nx**2, dtype=np.int32).reshape(Nx, Nx)
+        local_faces = np.zeros(((Nx-1)**2, 4), dtype=np.int32)
+        local_faces[:, 0] = vertex_numbers[:-1, :-1].reshape(-1)
+        local_faces[:, 1] = vertex_numbers[1:, :-1].reshape(-1)
+        local_faces[:, 2] = vertex_numbers[1:, 1:].reshape(-1)
+        local_faces[:, 3] = vertex_numbers[:-1, 1:].reshape(-1)
+    
+        cells = panel_numbering[:, local_faces].reshape(-1, 4)
+        return cells, coords
+        
+        
+class UnitCubedSphereMesh(CubedSphereMesh):
+    """
+    Generate a cubed approximation to the unit sphere
+    """
+    def __init__(self, refinement_level=0, degree=1, reorder=None, distribution_parameters=None,
+                 comm=COMM_WORLD):
+        """
+        :kwarg refinement_level: optional number of refinements (0 is a cube).
+        :kwarg degree: polynomial degree of coordinate space (defaults
+            to 1: bilinear quads)
+        :kwarg reorder: (optional), should the mesh be reordered?
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+        """
+        super().__init__(1.0, refinement_level=refinement_level, degree=degree,
+                         reorder=reorder, comm=comm)
+
+
+class TorusMesh(AbstractMesh):
+    """
+    Generate a toroidal mesh
+    """
+    def __init__(self, nR, nr, R, r, quadrilateral=False, reorder=None,
+                 distribution_parameters=None, comm=COMM_WORLD):
+        """
+        :arg nR: The number of cells in the major direction (min 3)
+        :arg nr: The number of cells in the minor direction (min 3)
+        :arg R: The major radius
+        :arg r: The minor radius
+        :kwarg quadrilateral: (optional), creates quadrilateral mesh, defaults to False
+        :kwarg reorder: (optional), should the mesh be reordered
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+        """
+        if nR < 3 or nr < 3:
+            raise ValueError("Must have at least 3 cells in each direction")
+
+        for n in (nR, nr):
+            if n % 1:
+                raise RuntimeError("Number of cells must be an integer")
+
+        self.nR = nR
+        self.nr = nr
+        self.R = R
+        self.r = r
+        self.quadrilateral = quadrilateral
+        self.reorder = reorder
+        self.distribution_parameters = distribution_parameters
+        self.comm = comm
+        self.mesh = None
+        self.BuildMesh()
+
+    def BuildMesh(self):
+        """
+        Build mesh
+        """
+        # gives an array [[0, 0], [0, 1], ..., [1, 0], [1, 1], ...]
+        idx_temp = np.asarray(np.meshgrid(np.arange(self.nR), np.arange(self.nr))).swapaxes(0, 2).reshape(-1, 2)
+
+        # vertices - standard formula for (x, y, z), see Wikipedia
+        vertices = np.asarray(np.column_stack((
+            (self.R + self.r * np.cos(idx_temp[:, 1] * (2 * np.pi / self.nr))) * np.cos(idx_temp[:, 0] * (2 * np.pi / self.nR)),
+            (self.R + self.r * np.cos(idx_temp[:, 1] * (2 * np.pi / self.nr))) * np.sin(idx_temp[:, 0] * (2 * np.pi / self.nR)),
+            self.r * np.sin(idx_temp[:, 1] * (2 * np.pi / self.nr)))), dtype=np.double)
+
+        # cell vertices
+        i, j = np.meshgrid(np.arange(self.nR, dtype=np.int32), np.arange(self.nr, dtype=np.int32))
+        i = i.reshape(-1)  # Miklos's suggestion to make the code
+        j = j.reshape(-1)  # less impenetrable
+        cells = [i * self.nr + j, i * self.nr + (j + 1) % self.nr, ((i + 1) % self.nR) * self.nr + (j + 1) % self.nr, ((i + 1) % self.nR) * self.nr + j]
+        cells = np.column_stack(cells)
+        if not self.quadrilateral:
+            # two cells per cell above...
+            cells = cells[:, [0, 1, 3, 1, 2, 3]].reshape(-1, 3)
+
+        plex = mesh._from_cell_list(2, cells, vertices, self.comm)
+        m = mesh.Mesh(plex, dim=3, reorder=self.reorder, distribution_parameters=self.distribution_parameters)
+
+        self.mesh = m
+
+    def GetMesh(self):
+        """
+        Return mesh
+        """
+        return self.mesh
+
+
+class CylinderMesh(AbstractMesh):
+    """
+    Generates a cylinder mesh
+    """
+    def __init__(self, nr, nl, radius=1, depth=1, longitudinal_direction="z", quadrilateral=False,
+                 reorder=None, distribution_parameters=None, diagonal=None, comm=COMM_WORLD):
+        """
+        :arg nr: number of cells the cylinder circumference should be
+         divided into (min 3)
+        :arg nl: number of cells along the longitudinal axis of the cylinder
+        :kwarg radius: (optional) radius of the cylinder to approximate
+             (default 1).
+        :kwarg depth: (optional) depth of the cylinder to approximate
+             (default 1).
+        :kwarg longitudinal_direction: (option) direction for the
+             longitudinal axis of the cylinder.
+        :kwarg quadrilateral: (optional), creates quadrilateral mesh, defaults to False
+        :kwarg diagonal: (optional), one of ``"crossed"``, ``"left"``, ``"right"``. ``"left"`` is the default.
+            Not valid for quad meshes.
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+
+        The boundary edges in this mesh are numbered as follows:
+
+        * 1: plane l == 0 (bottom)
+        * 2: plane l == depth (top)
+        """
+        if nr < 3:
+            raise ValueError("CylinderMesh must have at least three cells")
+        if quadrilateral and diagonal is not None:
+            raise ValueError("Cannot specify slope of diagonal on quad meshes")
+        if not quadrilateral and diagonal is None:
+            diagonal = "left"
+        self.nr = nr
+        self.nl = nl
+        self.radius = radius
+        self.depth = depth
+        self.longitudinal_direction = longitudinal_direction
+        self.quadrilateral = quadrilateral
+        self.reorder = reorder
+        self.distribution_parameters = distribution_parameters
+        self.diagonal = diagonal
+        self.comm = comm
+        self.mesh = None
+        self.BuildMesh()
+
+    def BuildMesh(self):
+        """
+        Build mesh
+        """
+        coord_xy = self.radius * np.column_stack((np.cos(np.arange(self.nr) * (2 * np.pi / self.nr)),
+                                             np.sin(np.arange(self.nr) * (2 * np.pi / self.nr))))
+        coord_z = self.depth * np.linspace(0.0, 1.0, self.nl + 1).reshape(-1, 1)
+        vertices = np.asarray(np.column_stack((np.tile(coord_xy, (self.nl + 1, 1)),
+                                               np.tile(coord_z, (1, self.nr)).reshape(-1, 1))),
+                                               dtype=np.double)
+
+        # intervals on circumference
+        ring_cells = np.column_stack((np.arange(0, self.nr, dtype=np.int32),
+                                      np.roll(np.arange(0, self.nr, dtype=np.int32), -1)))
+        # quads in the first layer
+        ring_cells = np.column_stack((ring_cells, np.roll(ring_cells, 1, axis=1) + self.nr))
+
+        if not self.quadrilateral and self.diagonal == "crossed":
+            dxy = np.pi / self.nr
+            Lxy = 2 * np.pi
+            extra_uv = np.linspace(dxy, Lxy - dxy, self.nr, dtype=np.double)
+            extra_xy = self.radius * np.column_stack((np.cos(extra_uv),
+                                                 np.sin(extra_uv)))
+            dz = 1 * 0.5 / self.nl
+            extra_z = self.depth * np.linspace(dz, 1 - dz, self.nl).reshape(-1, 1)
+            extras = np.asarray(np.column_stack((np.tile(extra_xy, (self.nl, 1)),
+                                                 np.tile(extra_z, (1, self.nr)).reshape(-1, 1))),
+                                                 dtype=np.double)
+            origvertices = vertices
+            vertices = np.vstack([vertices, extras])
+            #
+            # 2-----3
+            # | \ / |
+            # |  4  |
+            # | / \ |
+            # 0-----1
+
+            offset = np.arange(self.nl, dtype=np.int32) * self.nr
+            origquads = np.row_stack(tuple(ring_cells + i for i in offset))
+            cells = np.zeros((origquads.shape[0] * 4, 3), dtype=np.int32)
+            cellidx = 0
+            newvertices = range(len(origvertices), len(origvertices) + len(extras))
+            for (origquad, extravertex) in zip(origquads, newvertices):
+                cells[cellidx + 0, :] = [origquad[0], origquad[1], extravertex]
+                cells[cellidx + 1, :] = [origquad[0], origquad[3], extravertex]
+                cells[cellidx + 2, :] = [origquad[3], origquad[2], extravertex]
+                cells[cellidx + 3, :] = [origquad[2], origquad[1], extravertex]
+                cellidx += 4
+
+        else:
+            offset = np.arange(self.nl, dtype=np.int32) * self.nr
+            cells = np.row_stack(tuple(ring_cells + i for i in offset))
+            if not self.quadrilateral:
+                if self.diagonal == "left":
+                    idx = [0, 1, 3, 1, 2, 3]
+                elif self.diagonal == "right":
+                    idx = [0, 1, 2, 0, 2, 3]
+                else:
+                    raise ValueError("Unrecognised value for diagonal '%r'", self.diagonal)
+                # two cells per cell above...
+                cells = cells[:, idx].reshape(-1, 3)
+
+        if self.longitudinal_direction == "x":
+            rotation = np.asarray([[0, 0, 1],
+                                   [0, 1, 0],
+                                   [-1, 0, 0]], dtype=np.double)
+            vertices = np.dot(vertices, rotation.T)
+        elif self.longitudinal_direction == "y":
+            rotation = np.asarray([[1, 0, 0],
+                                   [0, 0, 1],
+                                   [0, -1, 0]], dtype=np.double)
+            vertices = np.dot(vertices, rotation.T)
+        elif self.longitudinal_direction != "z":
+            raise ValueError("Unknown longitudinal direction '%s'" % self.longitudinal_direction)
+        plex = mesh._from_cell_list(2, cells, vertices, self.comm)
+
+        plex.createLabel(dmcommon.FACE_SETS_LABEL)
+        plex.markBoundaryFaces("boundary_faces")
+        coords = plex.getCoordinates()
+        coord_sec = plex.getCoordinateSection()
+        if plex.getStratumSize("boundary_faces", 1) > 0:
+            boundary_faces = plex.getStratumIS("boundary_faces", 1).getIndices()
+            eps = self.depth / (2 * self.nl)
+            for face in boundary_faces:
+                face_coords = plex.vecGetClosure(coord_sec, coords, face)
+                # index of x/y/z coordinates of the face element
+                axis_ix = {"x": 0, "y": 1, "z": 2}
+                i = axis_ix[self.longitudinal_direction]
+                j = i + 3
+                if abs(face_coords[i]) < eps and abs(face_coords[j]) < eps:
+                    # bottom of cylinder
+                    plex.setLabelValue(dmcommon.FACE_SETS_LABEL, face, 1)
+                if abs(face_coords[i] - self.depth) < eps and abs(face_coords[j] - self.depth) < eps:
+                    # top of cylinder
+                    plex.setLabelValue(dmcommon.FACE_SETS_LABEL, face, 2)
+
+        m = mesh.Mesh(plex, dim=3, reorder=self.reorder, distribution_parameters=self.distribution_parameters)
+
+        self.mesh = m
+
+    def GetMesh(self):
+        """
+        Return mesh
+        """
+        return self.mesh
+
+
+class PartiallyPeriodicRectangleMesh(AbstractMesh):
+    """
+    Generates RectangleMesh that is periodic in the x or y direction.
+    """
+    def __init__(self, nx, ny, Lx, Ly, direction="x", quadrilateral=False, reorder=None,
+                 distribution_parameters=None, diagonal=None, comm=COMM_WORLD):
+        """
+        :arg nx: The number of cells in the x direction
+        :arg ny: The number of cells in the y direction
+        :arg Lx: The extent in the x direction
+        :arg Ly: The extent in the y direction
+        :kwarg direction: The direction of the periodicity (default x).
+        :kwarg quadrilateral: (optional), creates quadrilateral mesh, defaults to False
+        :kwarg reorder: (optional), should the mesh be reordered
+        :kwarg diagonal: (optional), one of ``"crossed"``, ``"left"``, ``"right"``. ``"left"`` is the default.
+            Not valid for quad meshes.
+        :kwarg comm: Optional communicator to build the mesh on (defaults to
+            COMM_WORLD).
+
+        If direction == "x" the boundary edges in this mesh are numbered as follows:
+
+        * 1: plane y == 0
+        * 2: plane y == Ly
+
+        If direction == "y" the boundary edges are:
+
+        * 1: plane x == 0
+        * 2: plane x == Lx
+        """
+        if direction not in ("x", "y"):
+            raise ValueError("Unsupported periodic direction '%s'" % direction)
+        self.direction = direction
+
+        # handle x/y directions: na, La are for the periodic axis
+        self.na = nx
+        self.nb = ny
+        self.La = Lx
+        self.Lb = Ly
+
+        if direction == "y":
+            self.na = ny
+            self.nb = nx
+            self.La = Ly
+            self.Lb = Lx
+
+        if self.na < 3:
+            raise ValueError("2D periodic meshes with fewer than 3 \
+                             cells in each direction are not currently supported")
+
+        self.quadrilateral = quadrilateral
+        self.reorder = reorder
+        self.distribution_parameters = distribution_parameters
+        self.diagonal = diagonal
+        self.comm = comm
+        self.mesh = None
+        self.BuildMesh()
+
+    def BuildMesh(self):
+        """
+        Build mesh
+        """
+        mesh_ = CylinderMesh(self.na, self.nb, 1.0, 1.0, longitudinal_direction="z",
+                             quadrilateral=self.quadrilateral, reorder=self.reorder,
+                             distribution_parameters=self.distribution_parameters,
+                             diagonal=self.diagonal, comm=self.comm)
+        m = mesh_.GetMesh()
+        coord_family = 'DQ' if self.quadrilateral else 'DG'
+        cell = 'quadrilateral' if self.quadrilateral else 'triangle'
+        coord_fs = VectorFunctionSpace(m, FiniteElement(coord_family, cell, 1, variant="equispaced"), dim=2)
+        old_coordinates = m.coordinates
+        new_coordinates = Function(coord_fs)
+
+        # make x-periodic mesh
+        # unravel x coordinates like in periodic interval
+        # set y coordinates to z coordinates
+        domain = "{[i, j, k, l]: 0 <= i, k < old_coords.dofs and 0 <= j < new_coords.dofs and 0 <= l < 3}"
+        instructions = f"""
+        <{RealType}> Y = 0
+        <{RealType}> pi = 3.141592653589793
+        <{RealType}> oc[k, l] = real(old_coords[k, l])
+        for i
+            Y = Y + oc[i, 1]
+        end
+        for j
+            <{RealType}> nc0 = atan2(oc[j, 1], oc[j, 0]) / (pi* 2)
+            nc0 = nc0 + 1 if nc0 < 0 else nc0
+            nc0 = 1 if nc0 == 0 and Y < 0 else nc0
+            new_coords[j, 0] = nc0 * Lx[0]
+            new_coords[j, 1] = old_coords[j, 2] * Ly[0]
+        end
+        """
+
+        cLx = Constant(self.La)
+        cLy = Constant(self.Lb)
+
+        par_loop((domain, instructions), dx,
+                 {"new_coords": (new_coordinates, WRITE),
+                  "old_coords": (old_coordinates, READ),
+                  "Lx": (cLx, READ),
+                  "Ly": (cLy, READ)},
+                 is_loopy_kernel=True)
+
+        if self.direction == "y":
+            # flip x and y coordinates
+            operator = np.asarray([[0, 1],
+                                   [1, 0]])
+            new_coordinates.dat.data[:] = np.dot(new_coordinates.dat.data, operator.T)
+
+        self.mesh = mesh.Mesh(new_coordinates)
+
+    def GetMesh(self):
+        """
+        Return mesh
+        """
+        return self.mesh
