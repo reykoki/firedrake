@@ -17,7 +17,7 @@ from pyadjoint.tape import no_annotations
 from abc import ABC, abstractmethod
 
 
-class IMeshFactory(metaclass=ABC):
+class IMeshFactory(ABC):
     """
     Abstract Mesh Factory Interface
     """
@@ -43,7 +43,7 @@ class MeshFactory(IMeshFactory):
             if mesh_type in ['IntervalMesh', 'UnitIntervalMesh']:
                 return IntervalMeshFactory.getMesh(mesh_type)
             elif mesh_type in ['PeriodicIntervalMesh', 'PeriodicUnitIntervalMesh']:
-                return IntervalMeshFactory.getMesh(mesh_type)
+                return PeriodicIntervalMeshFactory.getMesh(mesh_type)
             elif mesh_type in ['UnitTriangleMesh']:
                 return UnitTriangleMeshFactory.getMesh(mesh_type)
             elif mesh_type in ['RectangleMesh', 'SquareMesh', 'UnitSquareMesh']:
@@ -1432,9 +1432,9 @@ class UnitCubeMesh(CubeMesh):
         :kwarg reorder: (optional), should the mesh be reordered?
         :kwarg comm: Optional communicator to build the mesh on (defaults to
             COMM_WORLD).
-    
+
         The boundary surfaces are numbered as follows:
-    
+
         * 1: plane x == 0
         * 2: plane x == 1
         * 3: plane y == 0
@@ -1444,8 +1444,8 @@ class UnitCubeMesh(CubeMesh):
         """
         super().__init__(nx, ny, nz, 1, reorder=reorder, distribution_parameters=distribution_parameters,
                          comm=comm)
-        
-        
+
+
 class PeriodicBoxMesh(AbstractMesh):
     """
     Generate a periodic mesh of a 3D box.
@@ -1476,7 +1476,7 @@ class PeriodicBoxMesh(AbstractMesh):
         self.comm = comm
         self.mesh = None
         self.BuildMesh()
-        
+
     def BuildMesh(self):
         """
         Build mesh
@@ -1883,7 +1883,7 @@ class CubedSphereMesh(AbstractMesh):
     """
     Generate an cubed approximation to the surface of the sphere.
     """
-    def __init__(self, radius, refinement_level=0, degree=1, reorder=None, 
+    def __init__(self, radius, refinement_level=0, degree=1, reorder=None,
                  distribution_parameters=None, comm=COMM_WORLD):
         """
         :arg radius: The radius of the sphere to approximate.
@@ -1899,7 +1899,7 @@ class CubedSphereMesh(AbstractMesh):
 
         if degree < 1:
             raise ValueError("Mesh coordinate degree must be at least 1")
-        
+
         self.radius = radius
         self.refinement_level = refinement_level
         self.degree = degree
@@ -1927,13 +1927,13 @@ class CubedSphereMesh(AbstractMesh):
         m._radius = self.radius
 
         self.mesh = m
-    
+
     def GetMesh(self):
         """
         Return mesh
         """
         return self.mesh
-    
+
     def _cubedsphere_cells_and_coords(self):
         """
         Generate vertex and face lists for cubed sphere
@@ -1941,7 +1941,7 @@ class CubedSphereMesh(AbstractMesh):
         # We build the mesh out of 6 panels of the cube
         # this allows to build the gnonomic cube transformation
         # which is defined separately for each panel
-    
+
         # Start by making a grid of local coordinates which we use
         # to map to each panel of the cubed sphere under the gnonomic
         # transformation
@@ -1950,40 +1950,40 @@ class CubedSphereMesh(AbstractMesh):
         theta = np.arange(np.arctan(-1.0), np.arctan(1.0)+dtheta, dtheta, dtype=np.double)
         x = a*np.tan(theta)
         Nx = x.size
-    
+
         # Compute panel numberings for each panel
         # We use the following "flatpack" arrangement of panels
         #   3
         #  102
         #   4
         #   5
-    
+
         # 0 is the bottom of the cube, 5 is the top.
         # All panels are numbered from left to right, top to bottom
         # according to this diagram.
-    
+
         panel_numbering = np.zeros((6, Nx, Nx), dtype=np.int32)
-    
+
         # Numbering for panel 0
         panel_numbering[0, :, :] = np.arange(Nx**2, dtype=np.int32).reshape(Nx, Nx)
         count = panel_numbering.max()+1
-    
+
         # Numbering for panel 5
         panel_numbering[5, :, :] = count + np.arange(Nx**2, dtype=np.int32).reshape(Nx, Nx)
         count = panel_numbering.max()+1
-    
+
         # Numbering for panel 4 - shares top edge with 0 and bottom edge
         #                         with 5
         # interior numbering
         panel_numbering[4, 1:-1, :] = count + np.arange(Nx*(Nx-2),
                                                         dtype=np.int32).reshape(Nx-2, Nx)
-    
+
         # bottom edge
         panel_numbering[4, 0, :] = panel_numbering[5, -1, :]
         # top edge
         panel_numbering[4, -1, :] = panel_numbering[0, 0, :]
         count = panel_numbering.max()+1
-    
+
         # Numbering for panel 3 - shares top edge with 5 and bottom edge
         #                         with 0
         # interior numbering
@@ -1994,7 +1994,7 @@ class CubedSphereMesh(AbstractMesh):
         # top edge
         panel_numbering[3, -1, :] = panel_numbering[5, 0, :]
         count = panel_numbering.max()+1
-    
+
         # Numbering for panel 1
         # interior numbering
         panel_numbering[1, 1:-1, 1:-1] = count + np.arange((Nx-2)**2,
@@ -2008,7 +2008,7 @@ class CubedSphereMesh(AbstractMesh):
         # bottom edge (excluding vertices) of 1 is left edge of 4
         panel_numbering[1, 0, 1:-1] = panel_numbering[4, 1:-1, 0]
         count = panel_numbering.max()+1
-    
+
         # Numbering for panel 2
         # interior numbering
         panel_numbering[2, 1:-1, 1:-1] = count + np.arange((Nx-2)**2,
@@ -2022,9 +2022,9 @@ class CubedSphereMesh(AbstractMesh):
         # top edge (excluding vertices) of 2 is right edge of 3
         panel_numbering[2, -1, 1:-1] = panel_numbering[3, 1:-1, -1]
         count = panel_numbering.max()+1
-    
+
         # That's the numbering done.
-    
+
         # Set up an array for all of the mesh coordinates
         Npoints = panel_numbering.max()+1
         coords = np.zeros((Npoints, 3), dtype=np.double)
@@ -2032,24 +2032,24 @@ class CubedSphereMesh(AbstractMesh):
         lX.shape = (Nx**2,)
         lY.shape = (Nx**2,)
         r = (a**2 + lX**2 + lY**2)**0.5
-    
+
         # Now we need to compute the gnonomic transformation
         # for each of the panels
         panel_numbering.shape = (6, Nx**2)
-    
+
         def coordinates_on_panel(panel_num, X, Y, Z):
             I = panel_numbering[panel_num, :]
             coords[I, 0] = self.radius / r * X
             coords[I, 1] = self.radius / r * Y
             coords[I, 2] = self.radius / r * Z
-    
+
         coordinates_on_panel(0, lX, lY, -a)
         coordinates_on_panel(1, -a, lY, -lX)
         coordinates_on_panel(2, a, lY, lX)
         coordinates_on_panel(3, lX, a, lY)
         coordinates_on_panel(4, lX, -a, -lY)
         coordinates_on_panel(5, lX, -lY, a)
-    
+
         # Now we need to build the face numbering
         # in local coordinates
         vertex_numbers = np.arange(Nx**2, dtype=np.int32).reshape(Nx, Nx)
@@ -2058,11 +2058,11 @@ class CubedSphereMesh(AbstractMesh):
         local_faces[:, 1] = vertex_numbers[1:, :-1].reshape(-1)
         local_faces[:, 2] = vertex_numbers[1:, 1:].reshape(-1)
         local_faces[:, 3] = vertex_numbers[:-1, 1:].reshape(-1)
-    
+
         cells = panel_numbering[:, local_faces].reshape(-1, 4)
         return cells, coords
-        
-        
+
+
 class UnitCubedSphereMesh(CubedSphereMesh):
     """
     Generate a cubed approximation to the unit sphere
