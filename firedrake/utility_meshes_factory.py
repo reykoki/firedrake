@@ -411,16 +411,15 @@ class IntervalMesh(AbstractMesh):
         The left hand boundary point has boundary marker 1,
         while the right hand point has marker 2.
         """
-        if ncells <= 0 or ncells % 1:
-            raise ValueError("Number of cells must be a positive integer")
-
         if right is None:
             self.left = 0
             self.right = length_or_left
         else:
             self.left = length_or_left
 
-        self.length = self.right - self.left
+        if ncells <= 0 or ncells % 1:
+            raise ValueError("Number of cells must be a positive integer")
+        self.length = right - left
         if self.length < 0:
             raise ValueError("Requested mesh has negative length")
 
@@ -986,8 +985,9 @@ class PeriodicRectangleMesh(AbstractMesh):
             self.mesh = mesh_.GetMesh()
             return
 
-        m = TorusMesh(self.nx, self.ny, 1.0, 0.5, quadrilateral=self.quadrilateral, reorder=self.reorder,
+        mesh_ = TorusMesh(self.nx, self.ny, 1.0, 0.5, quadrilateral=self.quadrilateral, reorder=self.reorder,
                       distribution_parameters=self.distribution_parameters, comm=self.comm)
+        m = mesh_.GetMesh()
         coord_family = 'DQ' if self.quadrilateral else 'DG'
         cell = 'quadrilateral' if self.quadrilateral else 'triangle'
         coord_fs = VectorFunctionSpace(m, FiniteElement(coord_family, cell, 1, variant="equispaced"), dim=2)
@@ -1424,7 +1424,7 @@ class UnitCubeMesh(CubeMesh):
     """
     Generate a mesh of a unit cube
     """
-    def __init(self, nx, ny, nz, reorder=None, distribution_parameters=None, comm=COMM_WORLD):
+    def __init__(self, nx, ny, nz, reorder=None, distribution_parameters=None, comm=COMM_WORLD):
         """
         :arg nx: The number of cells in the x direction
         :arg ny: The number of cells in the y direction
@@ -1442,7 +1442,7 @@ class UnitCubeMesh(CubeMesh):
         * 5: plane z == 0
         * 6: plane z == 1
         """
-        super().__init__(nx, ny, nz, 1, reorder=reorder, distribution_parameters=distribution_parameters,
+        super().__init__(nx, ny, nz, L=1, reorder=reorder, distribution_parameters=distribution_parameters,
                          comm=comm)
 
 
