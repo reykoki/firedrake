@@ -29,9 +29,7 @@ def VectorFunctionSpace(mesh, family, degree=None, dim=None,
     function_space_obj = FunctionSpaceBuilder(mesh, family=family, degree=degree,
                                               dim=dim, name=name, vfamily=vfamily,
                                               vdegree=vdegree).get_vector_element().build()
-
-    print('\nTHIS IS REY\n')
-    print(function_space_obj.function_space)
+    print(vars(function_space_obj))
     return function_space_obj.function_space
 
 def TensorFunctionSpace(mesh, family, degree=None, name=None, vfamily=None, vdegree=None):
@@ -43,16 +41,15 @@ def MixedFunctionSpace(mesh, family, degree=None, name=None, vfamily=None, vdegr
 class FunctionSpace:
 
     def __init__(self, builder):
-        self.function_space = self.build_function_space
-        print(self.function_space)
+        self.build_function_space(builder)
 
-    def build_function_space(self):
+    def build_function_space(self, builder):
         if builder.element.family() == "Real":
             self.function_space = impl.RealFunctionSpace(builder.topology, builder.element, name=builder.name)
         else:
             self.function_space = impl.FunctionSpace(builder.topology, builder.element, name=builder.name)
         if builder.mesh is not builder.topology:
-            self.function_space = impl.WithGeometry(builder.function_space, builder.mesh)
+            self.function_space = impl.WithGeometry(self.function_space, builder.mesh)
 
 class FunctionSpaceBuilder:
 
@@ -131,7 +128,7 @@ class FunctionSpaceBuilder:
         return self
 
 
-class CreateMixedFunctionSpace:
+class CreateMixedFunctionSpace():
 
     def __init__(self, spaces, name=None, mesh=None):
         super().__init__(mesh, name=name)

@@ -99,14 +99,6 @@ def check_element(element, top=True):
 @timed_function("CreateFunctionSpace")
 def FunctionSpace(mesh, family, degree=None, name=None, vfamily=None,
                   vdegree=None):
-    print('\n=========== IN FUNCTIONSPACE ===========')
-    print('MESH:')
-    print(mesh)
-    print('FAMILY:')
-    print(family)
-    print('DEGREE:')
-    print(degree)
-
     """Create a :class:`.FunctionSpace`.
 
     :arg mesh: The mesh to determine the cell from.
@@ -123,8 +115,6 @@ def FunctionSpace(mesh, family, degree=None, name=None, vfamily=None,
     are ignored and the appropriate :class:`.FunctionSpace` is returned.
     """
     element = make_scalar_element(mesh, family, degree, vfamily, vdegree)
-    print('ELEMENT:')
-    print(element)
 
     # Support FunctionSpace(mesh, MixedElement)
     if type(element) is ufl.MixedElement:
@@ -135,29 +125,18 @@ def FunctionSpace(mesh, family, degree=None, name=None, vfamily=None,
 
     # Otherwise, build the FunctionSpace.
     topology = mesh.topology
-    print('===================END FUCNTIONSPACE=====================\n')
     if element.family() == "Real":
         new = impl.RealFunctionSpace(topology, element, name=name)
     else:
         new = impl.FunctionSpace(topology, element, name=name)
     if mesh is not topology:
-        print('FUNCTION_SPACE:')
-        print(impl.WithGeometry(new, mesh))
         return impl.WithGeometry(new, mesh)
     else:
-        print('FUNCTION_SPACE:')
-        print(new)
         return new
 
 
 def VectorFunctionSpace(mesh, family, degree=None, dim=None,
                         name=None, vfamily=None, vdegree=None):
-    print('\n=========== IN VECTORFUNCTIONSPACE ===========')
-    print('MESH:')
-    print(mesh)
-    print('FAMILY:')
-    print(family)
-
     """Create a rank-1 :class:`.FunctionSpace`.
 
     :arg mesh: The mesh to determine the cell from.
@@ -187,13 +166,10 @@ def VectorFunctionSpace(mesh, family, degree=None, dim=None,
 
     """
     sub_element = make_scalar_element(mesh, family, degree, vfamily, vdegree)
-    print('SUB_ELEMENT:')
-    print(sub_element)
     dim = dim or mesh.ufl_cell().geometric_dimension()
     element = ufl.VectorElement(sub_element, dim=dim)
-    print('ELEMENT:')
-    print(element)
-    print('==============================================\n')
+
+    print(FunctionSpace(mesh,element,name=name))
     return FunctionSpace(mesh, element, name=name)
 
 
