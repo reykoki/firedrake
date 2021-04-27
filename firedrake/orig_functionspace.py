@@ -14,7 +14,7 @@ from firedrake import functionspaceimpl as impl
 
 __all__ = ("MixedFunctionSpace", "FunctionSpace",
            "VectorFunctionSpace", "TensorFunctionSpace")
-
+print('\nORIGINAL\n')
 
 def make_scalar_element(mesh, family, degree, vfamily, vdegree):
     """Build a scalar :class:`ufl.FiniteElement`.
@@ -169,7 +169,6 @@ def VectorFunctionSpace(mesh, family, degree=None, dim=None,
     dim = dim or mesh.ufl_cell().geometric_dimension()
     element = ufl.VectorElement(sub_element, dim=dim)
 
-    print(FunctionSpace(mesh,element,name=name))
     return FunctionSpace(mesh, element, name=name)
 
 

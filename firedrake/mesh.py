@@ -1728,12 +1728,6 @@ def Mesh(meshfile, **kwargs):
 
         coordinates_fs = functionspace.VectorFunctionSpace(self.topology, "Lagrange", 1,
                                                            dim=geometric_dim)
-        print('============================== MESH ==============================' )
-        print('TOPOLOGY')
-        print(self.topology)
-        print('COORDINATES_FS:')
-        print(coordinates_fs)
-        print('')
 
         coordinates_data = dmcommon.reordered_coords(plex, coordinates_fs.dm.getDefaultSection(),
                                                      (self.num_vertices(), geometric_dim))
